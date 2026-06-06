@@ -1,0 +1,11 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "loot-deals",
+      "runtimeExecutable": "npx",
+      "runtimeArgs": ["serve", "-p", "4321", "loot-deals"],
+      "port": 4321
+    }
+  ]
+}

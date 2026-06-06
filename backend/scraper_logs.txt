@@ -1,0 +1,4 @@
+# Loot. Scraper Logs
+# Raw deals, LLM decisions, and what was posted
+# Updated automatically by the scraper
+

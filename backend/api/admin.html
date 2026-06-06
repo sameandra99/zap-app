@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Loot. — Admin Dashboard</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background: #F7F4EF;
+      padding: 24px;
+    }
+    .container { max-width: 1400px; margin: 0 auto; }
+    h1 { color: #1C1917; margin-bottom: 8px; }
+    .subtitle { color: #78716C; margin-bottom: 24px; font-size: 14px; }
+
+    .controls {
+      display: flex; gap: 12px; margin-bottom: 24px;
+    }
+    button {
+      background: #1C1917; color: #fff;
+      border: none; padding: 10px 16px;
+      border-radius: 8px; cursor: pointer; font-size: 13px;
+      font-weight: 600;
+    }
+    button:hover { background: #3A3936; }
+    button.secondary { background: #E8E4DE; color: #1C1917; }
+    button.secondary:hover { background: #DDD8D0; }
+
+    .stats {
+      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 12px; margin-bottom: 24px;
+    }
+    .stat {
+      background: #fff; padding: 16px; border-radius: 12px;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+    }
+    .stat-label { color: #78716C; font-size: 12px; margin-bottom: 4px; }
+    .stat-value { color: #1C1917; font-size: 28px; font-weight: 800; }
+
+    table {
+      width: 100%; background: #fff;
+      border-radius: 12px; overflow: hidden;
+      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
+      border-collapse: collapse;
+    }
+    th {
+      background: #F5F3EF; color: #1C1917;
+      padding: 12px 16px; text-align: left;
+      font-weight: 600; font-size: 12px;
+      border-bottom: 1px solid #E8E4DE;
+    }
+    td {
+      padding: 12px 16px; border-bottom: 1px solid #F5F3EF;
+      font-size: 13px;
+    }
+    tr:hover { background: #FAFAF8; }
+
+    .status-valid { color: #16A34A; font-weight: 600; }
+    .status-invalid { color: #DC2626; font-weight: 600; }
+    .status-posted { background: #E8F5E9; padding: 4px 8px; border-radius: 4px; color: #2E7D32; }
+    .status-filtered { background: #FFEBEE; padding: 4px 8px; border-radius: 4px; color: #C62828; }
+
+    .raw-text {
+      max-width: 300px; overflow: hidden; text-overflow: ellipsis;
+      white-space: nowrap; color: #78716C;
+    }
+    .reason { color: #C62828; font-size: 12px; }
+
+    .pagination {
+      display: flex; gap: 8px; margin-top: 24px; justify-content: center;
+    }
+    .loading { text-align: center; padding: 40px; color: #78716C; }
+    .error { background: #FFEBEE; color: #C62828; padding: 16px; border-radius: 8px; }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <h1>Loot. — Pipeline Logs</h1>
+    <p class="subtitle">View raw deals, LLM decisions, and what made it to customers</p>
+
+    <div class="controls">
+      <button onclick="loadLogs(true)">All Deals</button>
+      <button class="secondary" onclick="loadLogs(false)">Posted Only</button>
+    </div>
+
+    <div class="stats">
+      <div class="stat">
+        <div class="stat-label">Total Processed</div>
+        <div class="stat-value" id="totalCount">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Valid/Posted</div>
+        <div class="stat-value" id="validCount">—</div>
+      </div>
+      <div class="stat">
+        <div class="stat-label">Filtered Out</div>
+        <div class="stat-value" id="filteredCount">—</div>
+      </div>
+    </div>
+
+    <div id="content"></div>
+  </div>
+
+  <script>
+    const API_BASE = "http://192.168.1.111:8000";
+    let currentOffset = 0;
+    let currentValidOnly = true;
+
+    async function loadLogs(validOnly = true) {
+      currentValidOnly = validOnly;
+      currentOffset = 0;
+      const content = document.getElementById('content');
+      content.innerHTML = '<div class="loading">Loading...</div>';
+
+      try {
+        const url = `${API_BASE}/api/admin/deal-logs?limit=50&offset=${currentOffset}&valid_only=${validOnly}`;
+        const res = await fetch(url);
+        const data = await res.json();
+
+        // Update stats
+        const total = data.total_processed || 0;
+        const posted = data.logs.filter(l => l.was_posted).length;
+        const filtered = total - posted;
+
+        document.getElementById('totalCount').textContent = total;
+        document.getElementById('validCount').textContent = posted;
+        document.getElementById('filteredCount').textContent = filtered;
+
+        if (data.logs.length === 0) {
+          content.innerHTML = '<div class="loading">No logs found</div>';
+          return;
+        }
+
+        let html = `
+          <table>
+            <thead>
+              <tr>
+                <th>Status</th>
+                <th>Raw Text</th>
+                <th>LLM Decision</th>
+                <th>Reason/Copy</th>
+                <th>Platform</th>
+                <th>Posted At</th>
+              </tr>
+            </thead>
+            <tbody>
+        `;
+
+        data.logs.forEach(log => {
+          const isPosted = log.was_posted;
+          const status = isPosted ? '✅ Posted' : '❌ Filtered';
+          const statusClass = isPosted ? 'status-posted' : 'status-filtered';
+          const llmDecision = log.llm_decision || {};
+          const reason = log.filter_reason || (llmDecision.reason || '');
+          const copy = llmDecision.copy || '';
+          const platform = llmDecision.platform || '—';
+
+          html += `
+            <tr>
+              <td><span class="${statusClass}">${status}</span></td>
+              <td><span class="raw-text">${escapeHtml(log.raw_text)}</span></td>
+              <td><span class="${isPosted ? 'status-valid' : 'status-invalid'}">${isPosted ? 'Valid' : 'Invalid'}</span></td>
+              <td>
+                ${isPosted
+                  ? `<div style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(copy)}</div>`
+                  : `<div class="reason">${escapeHtml(reason)}</div>`
+                }
+              </td>
+              <td>${platform}</td>
+              <td>${new Date(log.created_at).toLocaleString()}</td>
+            </tr>
+          `;
+        });
+
+        html += '</tbody></table>';
+        content.innerHTML = html;
+
+      } catch (e) {
+        content.innerHTML = `<div class="error">Error loading logs: ${e.message}</div>`;
+      }
+    }
+
+    function escapeHtml(text) {
+      if (!text) return '';
+      const map = {
+        '&': '&amp;',
+        '<': '&lt;',
+        '>': '&gt;',
+        '"': '&quot;',
+        "'": '&#039;'
+      };
+      return text.replace(/[&<>"']/g, m => map[m]);
+    }
+
+    // Load on page load
+    loadLogs(true);
+  </script>
+</body>
+</html>
