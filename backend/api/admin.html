@@ -1,201 +1,358 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Loot. — Admin Dashboard</title>
-  <style>
-    * { margin: 0; padding: 0; box-sizing: border-box; }
-    body {
-      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
-      background: #F7F4EF;
-      padding: 24px;
-    }
-    .container { max-width: 1400px; margin: 0 auto; }
-    h1 { color: #1C1917; margin-bottom: 8px; }
-    .subtitle { color: #78716C; margin-bottom: 24px; font-size: 14px; }
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<title>Zap. — Pipeline Monitor</title>
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F7F5F2;color:#1C1917;-webkit-font-smoothing:antialiased}
+.top{background:#1C1917;color:#fff;padding:14px 24px;display:flex;align-items:center;justify-content:space-between}
+.top h1{font-size:17px;font-weight:800;letter-spacing:-0.3px}
+.top h1 span{color:#E8571A}
+.dot{width:8px;height:8px;border-radius:50%;background:#2ECC71;display:inline-block;margin-right:6px;animation:pulse 2s infinite}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.4}}
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(140px,1fr));gap:10px;padding:16px 20px}
+.stat{background:#fff;border-radius:10px;padding:14px;box-shadow:0 1px 3px rgba(0,0,0,.06)}
+.stat-val{font-size:28px;font-weight:800;color:#1C1917}
+.stat-val.green{color:#16A34A}.stat-val.amber{color:#D97706}.stat-val.red{color:#DC2626}
+.stat-label{font-size:11px;color:#A8A29E;margin-top:3px;font-weight:500}
+.tabs{display:flex;gap:8px;padding:0 20px 12px;border-bottom:1px solid #EEE;background:#fff}
+.tab{padding:8px 16px;border-radius:6px;font-size:13px;font-weight:600;cursor:pointer;border:none;font-family:inherit}
+.tab.active-all{background:#1C1917;color:#fff}
+.tab.active-posted{background:#16A34A;color:#fff}
+.tab.active-filtered{background:#DC2626;color:#fff}
+.tab:not(.active-all):not(.active-posted):not(.active-filtered){background:#F0EDE8;color:#78716C}
+.toolbar{display:flex;align-items:center;gap:8px;padding:12px 20px;background:#fff}
+.toolbar input{flex:1;padding:7px 12px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit}
+.btn-refresh{padding:7px 14px;border-radius:6px;background:#F0EDE8;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
+.btn-refresh:hover{background:#E5E2DC}
+.table-wrap{overflow-x:auto;padding:0 20px 24px}
+table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:12px}
+th{background:#F5F3EF;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#78716C;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #EEE;white-space:nowrap}
+td{padding:10px 12px;font-size:12px;border-bottom:1px solid #F5F3EF;vertical-align:top}
+tr:last-child td{border-bottom:none}
+tr:hover td{background:#FAFAF8}
+.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:50px;font-size:10px;font-weight:700}
+.badge.posted{background:#DCFCE7;color:#15803D}
+.badge.filtered{background:#FEE2E2;color:#B91C1C}
+.badge.approved{background:#E0F2FE;color:#0369A1}
+.channel{font-size:11px;background:#F0EDE8;padding:2px 7px;border-radius:4px;color:#78716C;font-weight:500;white-space:nowrap}
+.raw-text{max-width:300px;max-height:40px;overflow:hidden;color:#78716C;font-size:11px;cursor:pointer;line-height:1.4;word-break:break-word}
+.raw-text:hover{color:#1C1917;background:#F0EDE8;padding:2px 4px}
+.copy-text{max-width:220px;font-size:12px;color:#1C1917;font-weight:500;line-height:1.3}
+.reason{font-size:11px;color:#B91C1C;max-width:160px;line-height:1.3}
+.img-thumb{width:40px;height:40px;object-fit:cover;border-radius:4px;background:#F0EDE8}
+.img-placeholder{width:40px;height:40px;border-radius:4px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:16px}
+.img-cell{text-align:center}
+.img-source{font-size:9px;color:#A8A29E;margin-top:2px;text-align:center;font-weight:500}
+.time-cell{font-size:11px;color:#A8A29E;white-space:nowrap}
+.actions{display:flex;gap:4px;white-space:nowrap}
+.btn-approve{padding:4px 8px;border-radius:4px;background:#DCFCE7;color:#15803D;border:none;font-size:11px;font-weight:700;cursor:pointer}
+.btn-approve:hover{background:#BBF7D0}
+.btn-remove{padding:4px 8px;border-radius:4px;background:#FEE2E2;color:#B91C1C;border:none;font-size:11px;font-weight:700;cursor:pointer}
+.btn-remove:hover{background:#FECACA}
+.btn-edit{padding:4px 8px;border-radius:4px;background:#E0F2FE;color:#0369A1;border:none;font-size:11px;font-weight:700;cursor:pointer}
+.btn-edit:hover{background:#BAE6FD}
+.empty{text-align:center;padding:40px;color:#A8A29E}
 
-    .controls {
-      display: flex; gap: 12px; margin-bottom: 24px;
-    }
-    button {
-      background: #1C1917; color: #fff;
-      border: none; padding: 10px 16px;
-      border-radius: 8px; cursor: pointer; font-size: 13px;
-      font-weight: 600;
-    }
-    button:hover { background: #3A3936; }
-    button.secondary { background: #E8E4DE; color: #1C1917; }
-    button.secondary:hover { background: #DDD8D0; }
-
-    .stats {
-      display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 12px; margin-bottom: 24px;
-    }
-    .stat {
-      background: #fff; padding: 16px; border-radius: 12px;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
-    }
-    .stat-label { color: #78716C; font-size: 12px; margin-bottom: 4px; }
-    .stat-value { color: #1C1917; font-size: 28px; font-weight: 800; }
-
-    table {
-      width: 100%; background: #fff;
-      border-radius: 12px; overflow: hidden;
-      box-shadow: 0 1px 3px rgba(0,0,0,0.07);
-      border-collapse: collapse;
-    }
-    th {
-      background: #F5F3EF; color: #1C1917;
-      padding: 12px 16px; text-align: left;
-      font-weight: 600; font-size: 12px;
-      border-bottom: 1px solid #E8E4DE;
-    }
-    td {
-      padding: 12px 16px; border-bottom: 1px solid #F5F3EF;
-      font-size: 13px;
-    }
-    tr:hover { background: #FAFAF8; }
-
-    .status-valid { color: #16A34A; font-weight: 600; }
-    .status-invalid { color: #DC2626; font-weight: 600; }
-    .status-posted { background: #E8F5E9; padding: 4px 8px; border-radius: 4px; color: #2E7D32; }
-    .status-filtered { background: #FFEBEE; padding: 4px 8px; border-radius: 4px; color: #C62828; }
-
-    .raw-text {
-      max-width: 300px; overflow: hidden; text-overflow: ellipsis;
-      white-space: nowrap; color: #78716C;
-    }
-    .reason { color: #C62828; font-size: 12px; }
-
-    .pagination {
-      display: flex; gap: 8px; margin-top: 24px; justify-content: center;
-    }
-    .loading { text-align: center; padding: 40px; color: #78716C; }
-    .error { background: #FFEBEE; color: #C62828; padding: 16px; border-radius: 8px; }
-  </style>
+/* Modal */
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.5);z-index:100;align-items:center;justify-content:center}
+.modal-bg.open{display:flex}
+.modal{background:#fff;border-radius:12px;padding:24px;width:500px;max-width:95vw;max-height:90vh;overflow-y:auto}
+.modal h3{font-size:16px;font-weight:700;margin-bottom:16px}
+.modal label{font-size:12px;font-weight:600;color:#78716C;display:block;margin-bottom:4px}
+.modal textarea,.modal input[type=text]{width:100%;padding:8px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit;resize:vertical;margin-bottom:12px}
+.modal textarea{min-height:80px}
+.modal-img-preview{width:80px;height:80px;object-fit:cover;border-radius:6px;margin-bottom:8px;display:none}
+.modal-actions{display:flex;gap:8px;justify-content:flex-end;margin-top:8px}
+.btn-save{padding:8px 18px;border-radius:6px;background:#1C1917;color:#fff;border:none;font-weight:700;font-size:13px;cursor:pointer}
+.btn-cancel{padding:8px 18px;border-radius:6px;background:#F0EDE8;color:#1C1917;border:none;font-weight:700;font-size:13px;cursor:pointer}
+.toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1C1917;color:#fff;padding:10px 20px;border-radius:50px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
+.toast.show{opacity:1}
+.raw-text-modal{max-height:200px;overflow-y:auto;padding:8px;border:1px solid #EEE;border-radius:6px;background:#F7F5F2;font-size:11px;white-space:pre-wrap;word-break:break-word;font-family:monospace}
+</style>
 </head>
 <body>
-  <div class="container">
-    <h1>Loot. — Pipeline Logs</h1>
-    <p class="subtitle">View raw deals, LLM decisions, and what made it to customers</p>
 
-    <div class="controls">
-      <button onclick="loadLogs(true)">All Deals</button>
-      <button class="secondary" onclick="loadLogs(false)">Posted Only</button>
+<div class="top">
+  <h1>Zap<span>.</span> Pipeline Monitor</h1>
+  <div style="font-size:12px;color:#A8A29E"><span class="dot"></span>Live</div>
+</div>
+
+<div class="stats">
+  <div class="stat"><div class="stat-val" id="s-total">—</div><div class="stat-label">Deals posted</div></div>
+  <div class="stat"><div class="stat-val green" id="s-today">—</div><div class="stat-label">Posted today</div></div>
+  <div class="stat"><div class="stat-val amber" id="s-logged">—</div><div class="stat-label">Pipeline logs</div></div>
+  <div class="stat"><div class="stat-val red" id="s-filtered">—</div><div class="stat-label">Filtered out</div></div>
+  <div class="stat"><div class="stat-val" id="s-clicks">—</div><div class="stat-label">Total clicks</div></div>
+</div>
+
+<div class="tabs" style="background:#F7F5F2;border:none">
+  <button class="tab active-all" onclick="setTab('all',this)">All</button>
+  <button class="tab" onclick="setTab('posted',this)">✅ Posted</button>
+  <button class="tab" onclick="setTab('filtered',this)">❌ Filtered</button>
+</div>
+<div class="toolbar">
+  <input type="text" id="search" placeholder="Search deals, channels, reasons..." oninput="render()"/>
+  <button class="btn-refresh" onclick="load()">↺ Refresh</button>
+</div>
+
+<div class="table-wrap">
+  <div id="content" class="empty">Loading...</div>
+</div>
+
+<!-- Edit Modal -->
+<div class="modal-bg" id="editModal">
+  <div class="modal">
+    <h3 id="modalTitle">Edit Deal</h3>
+    <input type="hidden" id="modalDealId"/>
+    <input type="hidden" id="modalLogIndex"/>
+    <input type="hidden" id="modalMode"/>
+
+    <label>Copy</label>
+    <textarea id="modalCopy" rows="3"></textarea>
+
+    <label>Image URL</label>
+    <input type="text" id="modalImageUrl" placeholder="https://..." oninput="previewImg()"/>
+    <img id="modalImgPreview" class="modal-img-preview"/>
+
+    <label style="margin-top:16px">Raw Telegram Message</label>
+    <div id="modalRawDisplay" class="raw-text-modal"></div>
+
+    <div class="modal-actions">
+      <button class="btn-cancel" onclick="closeModal()">Cancel</button>
+      <button class="btn-save" onclick="saveModal()">Save & Post</button>
     </div>
-
-    <div class="stats">
-      <div class="stat">
-        <div class="stat-label">Total Processed</div>
-        <div class="stat-value" id="totalCount">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Valid/Posted</div>
-        <div class="stat-value" id="validCount">—</div>
-      </div>
-      <div class="stat">
-        <div class="stat-label">Filtered Out</div>
-        <div class="stat-value" id="filteredCount">—</div>
-      </div>
-    </div>
-
-    <div id="content"></div>
   </div>
+</div>
 
-  <script>
-    const API_BASE = "http://192.168.1.111:8000";
-    let currentOffset = 0;
-    let currentValidOnly = true;
+<div class="toast" id="toast"></div>
 
-    async function loadLogs(validOnly = true) {
-      currentValidOnly = validOnly;
-      currentOffset = 0;
-      const content = document.getElementById('content');
-      content.innerHTML = '<div class="loading">Loading...</div>';
+<script>
+let activeTab = 'all';
+let allLogs = [];
+let allDeals = [];
 
-      try {
-        const url = `${API_BASE}/api/admin/deal-logs?limit=50&offset=${currentOffset}&valid_only=${validOnly}`;
-        const res = await fetch(url);
-        const data = await res.json();
+async function load() {
+  document.getElementById('content').innerHTML = '<div class="empty">Loading...</div>';
+  const [logsRes, dealsRes] = await Promise.all([
+    fetch('/admin/logs?limit=200').then(r=>r.json()).catch(()=>({logs:[]})),
+    fetch('/admin/deals').then(r=>r.json()).catch(()=>({deals:[]})),
+  ]);
+  allLogs = logsRes.logs || [];
+  allDeals = dealsRes.deals || [];
 
-        // Update stats
-        const total = data.total_processed || 0;
-        const posted = data.logs.filter(l => l.was_posted).length;
-        const filtered = total - posted;
+  const today = new Date().toISOString().split('T')[0];
+  const todayDeals = allDeals.filter(d => d.created_at?.startsWith(today));
+  const totalClicks = allDeals.reduce((s,d)=>s+(d.clicks||0),0);
+  const filtered = allLogs.filter(l => !l.is_valid).length;
 
-        document.getElementById('totalCount').textContent = total;
-        document.getElementById('validCount').textContent = posted;
-        document.getElementById('filteredCount').textContent = filtered;
+  document.getElementById('s-total').textContent = allDeals.length;
+  document.getElementById('s-today').textContent = todayDeals.length;
+  document.getElementById('s-logged').textContent = allLogs.length;
+  document.getElementById('s-filtered').textContent = filtered;
+  document.getElementById('s-clicks').textContent = totalClicks >= 1000 ? (totalClicks/1000).toFixed(1)+'K' : totalClicks;
 
-        if (data.logs.length === 0) {
-          content.innerHTML = '<div class="loading">No logs found</div>';
-          return;
-        }
+  render();
+}
 
-        let html = `
-          <table>
-            <thead>
-              <tr>
-                <th>Status</th>
-                <th>Raw Text</th>
-                <th>LLM Decision</th>
-                <th>Reason/Copy</th>
-                <th>Platform</th>
-                <th>Posted At</th>
-              </tr>
-            </thead>
-            <tbody>
-        `;
+function setTab(t, btn) {
+  activeTab = t;
+  document.querySelectorAll('.tab').forEach(b => b.className = 'tab');
+  btn.className = `tab active-${t}`;
+  render();
+}
 
-        data.logs.forEach(log => {
-          const isPosted = log.was_posted;
-          const status = isPosted ? '✅ Posted' : '❌ Filtered';
-          const statusClass = isPosted ? 'status-posted' : 'status-filtered';
-          const llmDecision = log.llm_decision || {};
-          const reason = log.filter_reason || (llmDecision.reason || '');
-          const copy = llmDecision.copy || '';
-          const platform = llmDecision.platform || '—';
+function fmtTime(iso) {
+  if (!iso) return '—';
+  const d = new Date(iso);
+  return d.toLocaleString('en-IN', {timeZone:'Asia/Kolkata', month:'short', day:'2-digit', hour:'2-digit', minute:'2-digit', hour12:true}).replace(',','');
+}
 
-          html += `
-            <tr>
-              <td><span class="${statusClass}">${status}</span></td>
-              <td><span class="raw-text">${escapeHtml(log.raw_text)}</span></td>
-              <td><span class="${isPosted ? 'status-valid' : 'status-invalid'}">${isPosted ? 'Valid' : 'Invalid'}</span></td>
-              <td>
-                ${isPosted
-                  ? `<div style="max-width: 250px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;">${escapeHtml(copy)}</div>`
-                  : `<div class="reason">${escapeHtml(reason)}</div>`
-                }
-              </td>
-              <td>${platform}</td>
-              <td>${new Date(log.created_at).toLocaleString()}</td>
-            </tr>
-          `;
-        });
+function getImageSource(raw, imageUrl) {
+  if (!imageUrl) return 'none';
+  if (imageUrl.includes('deal-images')) return raw ? 'telegram' : 'scraped';
+  if (imageUrl.includes('amazon')) return 'amazon-cdn';
+  if (imageUrl.includes('media-amazon')) return 'amazon-cdn';
+  if (imageUrl.includes('myntra')) return 'myntra';
+  if (imageUrl.includes('ajio')) return 'ajio';
+  if (imageUrl.includes('flipkart')) return 'flipkart';
+  return 'other';
+}
 
-        html += '</tbody></table>';
-        content.innerHTML = html;
+function render() {
+  const q = (document.getElementById('search')?.value || '').toLowerCase();
+  let items = [];
 
-      } catch (e) {
-        content.innerHTML = `<div class="error">Error loading logs: ${e.message}</div>`;
-      }
-    }
+  if (activeTab === 'posted') {
+    items = allDeals.map(d => ({type:'deal', ...d}));
+  } else if (activeTab === 'filtered') {
+    items = allLogs.filter(l => !l.is_valid && !l.admin_approved);
+  } else {
+    const logDealIds = new Set(allLogs.filter(l=>l.is_valid).map(l=>l.deal_id));
+    items = [
+      ...allLogs,
+      ...allDeals.filter(d => !logDealIds.has(d.id)).map(d => ({
+        type:'deal', is_valid:true, copy:d.copy, source_channel:d.source_channel,
+        created_at:d.created_at, deal_id:d.id, image_url:d.image_url,
+        llm_decision:{platform:d.platform, url:d.affiliate_url}
+      }))
+    ];
+  }
 
-    function escapeHtml(text) {
-      if (!text) return '';
-      const map = {
-        '&': '&amp;',
-        '<': '&lt;',
-        '>': '&gt;',
-        '"': '&quot;',
-        "'": '&#039;'
-      };
-      return text.replace(/[&<>"']/g, m => map[m]);
-    }
+  if (q) {
+    items = items.filter(l =>
+      (l.raw_text||'').toLowerCase().includes(q) ||
+      (l.copy||l.llm_decision?.copy||'').toLowerCase().includes(q) ||
+      (l.source_channel||'').toLowerCase().includes(q) ||
+      (l.filter_reason||'').toLowerCase().includes(q)
+    );
+  }
 
-    // Load on page load
-    loadLogs(true);
-  </script>
+  if (!items.length) {
+    document.getElementById('content').innerHTML = '<div class="empty">No results.</div>';
+    return;
+  }
+
+  document.getElementById('content').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Status</th>
+        <th>Channel</th>
+        <th>Image</th>
+        <th>Raw Message</th>
+        <th>Copy / Reason</th>
+        <th>Msg Time</th>
+        <th>Posted</th>
+        <th>Src</th>
+        <th>Actions</th>
+      </tr></thead>
+      <tbody>
+        ${items.map((l, i) => {
+          const msgTime = fmtTime(l.timestamp_fetched || l.created_at);
+          const postedTime = fmtTime(l.created_at);
+          const copy = l.copy || l.llm_decision?.copy || '';
+          const reason = l.filter_reason || l.llm_decision?.reason || '';
+          const raw = l.raw_text || '';
+          const ch = l.source_channel || '—';
+          const imgUrl = l.image_url || '';
+          const imgSrc = getImageSource(raw, imgUrl);
+          const dealId = l.deal_id || l.id || '';
+          const isApproved = l.admin_approved;
+          const isPosted = l.is_valid || l.type === 'deal';
+          const platform = l.llm_decision?.platform || l.platform || '';
+          const url = l.llm_decision?.url || l.affiliate_url || '';
+
+          const badge = isApproved ? `<span class="badge approved">✔</span>`
+            : isPosted ? `<span class="badge posted">✅</span>`
+            : `<span class="badge filtered">❌</span>`;
+
+          const imgCell = imgUrl
+            ? `<div class="img-cell"><img class="img-thumb" src="${esc(imgUrl)}" onerror="this.style.display='none'"/></div>`
+            : `<div class="img-cell"><div class="img-placeholder">🛍</div></div>`;
+
+          const actions = isPosted || isApproved
+            ? `<div class="actions">
+                <button class="btn-edit" onclick="openEdit('${esc(dealId)}', -1, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✏️</button>
+                <button class="btn-remove" onclick="removeDeal('${esc(dealId)}')">🗑</button>
+               </div>`
+            : `<div class="actions">
+                <button class="btn-approve" onclick="openEdit('', ${i}, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✅</button>
+               </div>`;
+
+          return `<tr>
+            <td>${badge}</td>
+            <td><span class="channel">${esc(ch)}</span></td>
+            <td>${imgCell}</td>
+            <td><div class="raw-text" title="${esc(raw)}" onclick="showRaw('${esc(raw).replace(/'/g,"\\'")}')">${esc(raw).substring(0,80)}</div></td>
+            <td>${isPosted || isApproved
+              ? `<div class="copy-text">${esc(copy.substring(0,80))}</div>`
+              : `<div class="reason">${esc(reason.substring(0,60))}</div>`}</td>
+            <td><span class="time-cell">${msgTime}</span></td>
+            <td><span class="time-cell">${postedTime}</span></td>
+            <td><span class="time-cell">${imgSrc}</span></td>
+            <td>${actions}</td>
+          </tr>`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+function openEdit(dealId, logIndex, copy, imageUrl, raw) {
+  document.getElementById('modalDealId').value = dealId;
+  document.getElementById('modalLogIndex').value = logIndex;
+  document.getElementById('modalMode').value = dealId ? 'edit' : 'approve';
+  document.getElementById('modalTitle').textContent = dealId ? 'Edit Deal' : 'Approve & Edit';
+  document.getElementById('modalCopy').value = copy;
+  document.getElementById('modalImageUrl').value = imageUrl;
+  document.getElementById('modalRawDisplay').textContent = raw;
+  previewImg();
+  document.getElementById('editModal').classList.add('open');
+}
+
+function closeModal() {
+  document.getElementById('editModal').classList.remove('open');
+}
+
+function previewImg() {
+  const url = document.getElementById('modalImageUrl').value;
+  const img = document.getElementById('modalImgPreview');
+  if (url) { img.src = url; img.style.display = 'block'; }
+  else { img.style.display = 'none'; }
+}
+
+async function saveModal() {
+  const dealId = document.getElementById('modalDealId').value;
+  const logIndex = parseInt(document.getElementById('modalLogIndex').value);
+  const mode = document.getElementById('modalMode').value;
+  const copy = document.getElementById('modalCopy').value;
+  const imageUrl = document.getElementById('modalImageUrl').value;
+
+  if (mode === 'edit' && dealId) {
+    await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {
+      method: 'PATCH',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({copy, image_url: imageUrl})
+    });
+    showToast('Deal updated ✅');
+  } else {
+    await fetch('/admin/approve', {
+      method: 'POST',
+      headers: {'Content-Type':'application/json'},
+      body: JSON.stringify({log_index: logIndex, copy, image_url: imageUrl})
+    });
+    showToast('Deal approved & posted ✅');
+  }
+  closeModal();
+  await load();
+}
+
+async function removeDeal(dealId) {
+  if (!confirm('Remove this deal from the app?')) return;
+  await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {method:'DELETE'});
+  showToast('Deal removed 🗑');
+  await load();
+}
+
+function showRaw(full) {
+  document.getElementById('modalRawDisplay').textContent = full;
+  document.getElementById('editModal').classList.add('open');
+}
+
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+function esc(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');
+}
+
+load();
+setInterval(load, 30000);
+</script>
 </body>
 </html>
