@@ -570,18 +570,33 @@ def detect_platform(url: str) -> str:
     return ""
 
 
-def pick_best_url(urls: list) -> str:
+def pick_best_url(urls: list, source_channel: str = "") -> str:
     """
     Deterministically choose the best product URL from a message's URLs.
     - Drops social/chat links
     - Prefers links that look like product pages (/dp/, /p/, /buy, /product)
     - Falls back to the first non-social URL
+
+    Special handling for desidime: prefer direct product URLs (amazon.in, flipkart, myntra, ajio)
+    over ddime.in short links, since Buy Now links are direct product URLs with affiliate meta.
     """
     if not urls:
         return ""
     candidates = [u for u in urls if not is_social_url(u)]
     if not candidates:
         return ""
+
+    # DesiDime-specific: if we have both ddime.in short links AND direct product URLs,
+    # prefer the direct ones (Buy Now links are direct product URLs with their affiliate tracking)
+    if source_channel == "desidime":
+        direct_product_urls = [
+            u for u in candidates
+            if any(domain in u.lower() for domain in ["amazon.in", "flipkart.com", "myntra.com", "ajio.com", "www.amazon.in", "www.flipkart.com", "www.myntra.com", "www.ajio.com"])
+        ]
+        if direct_product_urls:
+            candidates = direct_product_urls  # Use only direct product URLs
+
+    # Prefer product page patterns
     for u in candidates:
         if re.search(r"/(dp|gp/product|p|buy|product|prod)/", u, re.I):
             return u
@@ -1198,7 +1213,7 @@ async def process_message(
         # Order matters: resolve FIRST (short link → destination), THEN clean.
 
         # 1. Pick the best product URL ourselves (LLM url is only a fallback)
-        product_url = pick_best_url(extracted_urls) or (result.get("url") or "")
+        product_url = pick_best_url(extracted_urls, source_channel=source_channel) or (result.get("url") or "")
 
         if not product_url:
             print(f"  🚫 No usable product link, skipping")
