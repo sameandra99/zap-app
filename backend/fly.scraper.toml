@@ -2,6 +2,7 @@ app = "loot-scraper"
 primary_region = "bom"  # Mumbai
 
 [build]
+  dockerfile = "Dockerfile"
 
 # Background worker — keep always running
 [machines]

@@ -124,21 +124,25 @@ def admin_dashboard():
 
 @app.post("/register-device")
 def register_device(data: dict):
-    """Register a push token (FCM or Expo) — stored in memory + Supabase for persistence."""
+    """Register a push token (FCM or Expo) — stored in memory + Supabase for persistence.
+    Idempotent: re-registering the same token is a no-op (upsert by token).
+    """
     token = data.get("token", "").strip()
     if not token:
         return {"status": "invalid_token"}
 
+    already_known = token in device_tokens
     device_tokens.add(token)
 
-    # Persist to Supabase so tokens survive API restarts
+    # Persist to Supabase — upsert deduplicates by primary key (token)
     try:
         db = get_db_admin()
         db.table("push_tokens").upsert({"token": token}).execute()
-    except Exception:
-        pass  # In-memory fallback is fine for now
+    except Exception as e:
+        print(f"[PUSH] DB upsert failed (in-memory fallback): {e}")
 
-    print(f"[PUSH] Registered token. Total: {len(device_tokens)}")
+    if not already_known:
+        print(f"[PUSH] New token registered. Total: {len(device_tokens)}")
     return {"status": "ok", "registered": len(device_tokens)}
 
 
@@ -199,16 +203,49 @@ async def send_notification(data: dict):
 
     # Send to raw FCM tokens via Firebase
     if fcm_tokens and FIREBASE_ENABLED:
+        dead_tokens = []
         for token in fcm_tokens:
             try:
+                extra_data = {}
+                if data.get("deal_id"):
+                    extra_data["deal_id"] = str(data["deal_id"])
                 message = messaging.Message(
                     notification=messaging.Notification(title=title, body=body),
+                    data=extra_data,
+                    android=messaging.AndroidConfig(
+                        priority="high",
+                        notification=messaging.AndroidNotification(
+                            sound="default",
+                            channel_id="deals",
+                        ),
+                    ),
                     token=token,
                 )
                 messaging.send(message)
                 results["fcm"] += 1
             except Exception as e:
-                print(f"  ⚠️  FCM send to {token[:20]}... failed: {type(e).__name__}")
+                err_str = str(e).lower()
+                # Dead token — remove from active set and DB so we stop retrying
+                if "registration-token-not-registered" in err_str or \
+                   "invalid-registration-token" in err_str or \
+                   "requested entity was not found" in err_str:
+                    dead_tokens.append(token)
+                    print(f"  🗑️  Dead FCM token removed: {token[:20]}...")
+                else:
+                    print(f"  ⚠️  FCM send to {token[:20]}... failed: {type(e).__name__}: {str(e)[:80]}")
+
+        # Prune dead tokens from memory + DB
+        if dead_tokens:
+            for t in dead_tokens:
+                device_tokens.discard(t)
+            try:
+                db = get_db_admin()
+                for t in dead_tokens:
+                    db.table("push_tokens").delete().eq("token", t).execute()
+                print(f"[PUSH-FCM] Pruned {len(dead_tokens)} dead token(s)")
+            except Exception as e:
+                print(f"[PUSH-FCM] DB prune failed: {e}")
+
         print(f"[PUSH-FCM] Sent to {results['fcm']}/{len(fcm_tokens)} devices")
 
     total = results["expo"] + results["fcm"]

@@ -5,8 +5,11 @@ Loot. — Telegram Scraper (Polling Mode)
 """
 
 import asyncio
+import hashlib
 import os
+import re
 import sys
+import time as _time
 from typing import Optional, Set
 from pathlib import Path
 from dotenv import load_dotenv
@@ -58,6 +61,28 @@ LOOKBACK_MINUTES = 10  # look back 10 minutes — catches messages missed during
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
 from pipeline.deal_pipeline import process_message
+
+# Content-hash dedup: same message text broadcast across multiple channels
+# within a 15-minute window is only processed once.
+_content_seen: dict[str, float] = {}   # hash → epoch timestamp
+_CONTENT_TTL = 900  # 15 minutes
+
+
+def _is_duplicate_content(text: str) -> bool:
+    """Return True if we've already processed this exact text recently."""
+    # Normalise: strip whitespace, lowercase, remove emoji/punctuation noise
+    normalised = re.sub(r'\s+', ' ', text.strip().lower())
+    normalised = re.sub(r'[^\w\s₹%]', '', normalised)[:300]  # first 300 chars
+    h = hashlib.md5(normalised.encode()).hexdigest()
+    now = _time.time()
+    # Prune stale entries
+    expired = [k for k, t in _content_seen.items() if now - t > _CONTENT_TTL]
+    for k in expired:
+        del _content_seen[k]
+    if h in _content_seen:
+        return True
+    _content_seen[h] = now
+    return False
 
 
 def get_processed_ids_from_db() -> Set[str]:
@@ -122,6 +147,14 @@ async def poll_channel(client, channel_entity, channel_name: str, processed_ids:
                 skipped_count += 1
                 continue
 
+            # Cross-channel duplicate guard: same text from multiple channels
+            # (e.g. broadcasted sale message) — only process once per 15 min
+            if _is_duplicate_content(text):
+                print(f"  🔁 [{channel_name}] duplicate content — skipping (already seen in another channel)")
+                processed_ids.add(msg_id)
+                skipped_count += 1
+                continue
+
             new_count += 1
             print(f"\n  📨 NEW [{channel_name}] {text[:75]}...")
 
@@ -130,9 +163,17 @@ async def poll_channel(client, channel_entity, channel_name: str, processed_ids:
                 print(f"      🖼️  {len(image_bytes)} bytes")
 
             # Check if message contains multiple deals
-            from pipeline.deal_pipeline import split_multi_deal_message
-            sub_deals = split_multi_deal_message(text)
+            from pipeline.deal_pipeline import split_multi_deal_message, is_generic_sale_announcement
             message_timestamp = message.date.replace(tzinfo=timezone.utc).isoformat()
+
+            # Pre-split check: reject generic sale announcements (no product/price)
+            # before splitting so we don't generate N useless log entries
+            if is_generic_sale_announcement(text):
+                print(f"      🚫 Generic sale announcement — skipping split+pipeline")
+                processed_ids.add(msg_id)
+                continue
+
+            sub_deals = split_multi_deal_message(text)
 
             if sub_deals:
                 print(f"      📦 Multi-deal message — splitting into {len(sub_deals)} posts")

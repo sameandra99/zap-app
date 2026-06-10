@@ -247,12 +247,17 @@ def score_copy_quality(raw_text: str) -> tuple[int, str]:
     return score, ",".join(reasons)
 
 
-async def send_push_notification(title: str, body: str):
-    """Send push notification via Expo Push API to all registered devices."""
+async def send_push_notification(title: str, body: str, deal_id: str = None):
+    """Send push notification to all registered devices via the API.
+    Passes deal_id so the app can deep-link directly to the deal on tap.
+    """
     api_url = os.environ.get("LOOT_API_URL", "http://localhost:8000")
+    payload = {"title": title, "body": body}
+    if deal_id:
+        payload["deal_id"] = deal_id
     try:
         async with httpx.AsyncClient(timeout=10) as client:
-            await client.post(f"{api_url}/notify", json={"title": title, "body": body})
+            await client.post(f"{api_url}/notify", json=payload)
     except Exception as e:
         print(f"  [PUSH] {type(e).__name__}: {str(e)[:60]}")
 
@@ -1086,6 +1091,50 @@ def extract_urls_from_text(text: str) -> list:
     return result
 
 
+def is_generic_sale_announcement(text: str) -> bool:
+    """
+    Return True if this message is a generic sale/event announcement with no
+    specific product, price, or deal — the kind of broadcast that generates
+    N useless pipeline entries when split.
+
+    Examples that should be rejected:
+      "MYNTRA HOME DECOR SALE – BEAUTIFY YOUR HOME FOR LESS! Up to 80% off"
+      "BIG BILLION DAYS — Shop now, thousands of offers"
+      "FASHION FEST: Women's styles up to 100% off | Men's up to 80% off"
+
+    Examples that should pass through:
+      "Bergner Triply Cookware 5-Piece Set ₹3,149 (59% off) https://..."
+      "Nike Air Max ₹2,499 only — BUY NOW https://..."
+    """
+    # Must have at least one URL to be worth processing at all
+    if not re.search(r'https?://', text):
+        return True  # no URL → nothing to pipeline
+
+    # Signs it IS specific: a rupee price, "₹", or explicit % off on a named product
+    has_specific_price = bool(re.search(r'₹\s*\d+', text))
+    has_product_name = bool(re.search(
+        r'\b(set|pack|piece|combo|kit|box|bundle|kg|litre|ltr|ml|gm|gram|pair|unit)\b',
+        text, re.IGNORECASE
+    ))
+
+    # Generic patterns: vague category + discount range, no product name
+    generic_patterns = [
+        r'(up to|upto)\s+\d+%\s*off',                  # "up to 80% off"
+        r'(min|minimum)\s+\d+%\s*off',                  # "min 50% off"
+        r'\d+%[-\s]*(to|-)\s*\d+%\s*off',               # "40%-80% off"
+        r'(thousands|hundreds|lakhs)\s+of\s+(offers|deals|products)',
+        r'(shop\s+now|grab\s+now)\s*[!,]?\s*(sale|offer|deal)',
+        r'(sale|fest|days|event|carnival)\s*[-–:!]\s*(shop|explore|grab)',
+    ]
+    generic_score = sum(1 for p in generic_patterns if re.search(p, text, re.IGNORECASE))
+
+    # If it looks generic (2+ generic signals) AND has no specific price — skip it
+    if generic_score >= 2 and not has_specific_price and not has_product_name:
+        return True
+
+    return False
+
+
 def split_multi_deal_message(text: str) -> list[dict]:
     """
     Detect and split a Telegram message that contains multiple deals.
@@ -1333,10 +1382,11 @@ async def process_message(
 
         await save_to_db(deal, image_bytes)
 
-        # Push notification for every valid deal
+        # Push notification for every valid deal — passes deal_id for deep linking
         await send_push_notification(
             title="⚡ Zap.",
             body=result["copy"][:100],
+            deal_id=str(deal_id) if deal_id else None,
         )
 
         _try_log(sb, {
