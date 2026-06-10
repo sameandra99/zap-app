@@ -124,9 +124,9 @@ def admin_dashboard():
 
 @app.post("/register-device")
 def register_device(data: dict):
-    """Register an Expo push token — stored in memory + Supabase for persistence."""
+    """Register a push token (FCM or Expo) — stored in memory + Supabase for persistence."""
     token = data.get("token", "").strip()
-    if not token or not token.startswith("ExponentPushToken["):
+    if not token:
         return {"status": "invalid_token"}
 
     device_tokens.add(token)
