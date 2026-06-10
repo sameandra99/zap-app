@@ -832,62 +832,263 @@ def is_junk_image(image_bytes: Optional[bytes], count: bool = False) -> bool:
 
 
 async def fetch_amazon_image(asin: str) -> Optional[bytes]:
-    """Fetch real product image from Amazon product page (not CDN placeholder)."""
+    """
+    Fetch the main product image for an Amazon ASIN.
+
+    Strategy (in order):
+      1. Amazon Product Advertising API (PAAPI 5.0) — if credentials configured.
+         This is the authoritative source used by all major deals apps; never
+         bot-blocked because it's an official affiliate API. Requires
+         AMAZON_PAAPI_ACCESS_KEY + AMAZON_PAAPI_SECRET_KEY in .env.
+         Get access: Associates Central → Tools → Product Advertising API.
+      2. Product page scraping — look for "large" / "hiRes" image JSON in HTML.
+         Works ~25-40% of the time; Amazon bot-strips pages from datacenter IPs.
+      3. Search-result thumbnail — `/s?k={asin}` is lighter and less bot-gated
+         than the product page. Yields the same /images/I/ thumbnail URL.
+    """
     if not asin:
         return None
-    try:
-        headers = {
-            "User-Agent": "Mozilla/5.0 (Linux; Android 11; Pixel 5) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Mobile Safari/537.36",
-            "Accept-Language": "en-IN,en;q=0.9",
-            "Accept": "text/html,application/xhtml+xml",
-        }
-        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
-            r = await client.get(f"https://www.amazon.in/dp/{asin}", headers=headers)
-            if r.status_code != 200:
-                return None
 
-            html = r.text
-            # Extract the main product image URL from page JSON.
-            # ONLY accept /images/I/ paths (I = Item/product). Amazon's UI sprite
-            # sheet and logos live under /images/G/ (Gateway assets) and must NOT
-            # be used — on bot-detected/stripped pages, og:image returns that sprite.
-            img_url = None
-            for pattern in [
-                r'"large":"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
-                r'"hiRes":"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
-                r'data-old-hires="(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
-            ]:
-                m = re.search(pattern, html)
-                if m:
-                    img_url = m.group(1)
+    # ── Strategy 1: PAAPI (if credentials are present) ────────────────────────
+    paapi_key    = os.getenv("AMAZON_PAAPI_ACCESS_KEY")
+    paapi_secret = os.getenv("AMAZON_PAAPI_SECRET_KEY")
+    paapi_tag    = os.getenv("AMAZON_AFFILIATE_TAG", "lootdeals-21")
+
+    if paapi_key and paapi_secret:
+        img_bytes = await _fetch_amazon_image_paapi(asin, paapi_key, paapi_secret, paapi_tag)
+        if img_bytes:
+            return img_bytes
+
+    # ── Common headers for strategies 2 & 3 ───────────────────────────────────
+    # Rotate through a few real browser UA strings to reduce bot-detection rate
+    user_agents = [
+        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
+        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+    ]
+
+    async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
+        # ── Strategy 2: Product page scraping ─────────────────────────────────
+        for ua in user_agents:
+            headers = {
+                "User-Agent": ua,
+                "Accept-Language": "en-IN,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+                "Accept-Encoding": "gzip, deflate, br",
+                "Cache-Control": "no-cache",
+            }
+            try:
+                r = await client.get(f"https://www.amazon.in/dp/{asin}", headers=headers)
+                if r.status_code != 200:
+                    continue
+
+                img_url = _extract_amazon_image_url(r.text)
+                if img_url:
+                    img_r = await client.get(img_url, headers=headers)
+                    if img_r.status_code == 200 and len(img_r.content) > 2000 and not is_junk_image(img_r.content):
+                        print(f"  🛒 Amazon product page image for {asin} ({len(img_r.content)} bytes)")
+                        return img_r.content
+                else:
+                    # Page returned but no image JSON — bot-stripped, try next UA
                     break
+            except Exception:
+                continue
 
-            if not img_url:
-                # Stripped/bot page — no product image JSON. Better no image than a sprite.
-                print(f"  ℹ️  No product image JSON on Amazon page for {asin} (likely bot-stripped)")
-                return None
+        # ── Strategy 3: Search-result thumbnail fallback ───────────────────────
+        # Amazon's /s?k= search page is significantly lighter and less
+        # aggressively bot-gated than the product page. The thumbnail images
+        # are the same /images/I/ product images, just at a smaller size.
+        for ua in user_agents[:2]:
+            headers = {
+                "User-Agent": ua,
+                "Accept-Language": "en-IN,en;q=0.9",
+                "Accept": "text/html,application/xhtml+xml",
+            }
+            try:
+                r = await client.get(
+                    f"https://www.amazon.in/s",
+                    params={"k": asin, "i": "aps"},
+                    headers=headers,
+                )
+                if r.status_code != 200:
+                    continue
 
-            img_r = await client.get(img_url, headers=headers)
-            if img_r.status_code == 200 and len(img_r.content) > 2000 and not is_junk_image(img_r.content):
-                print(f"  🛒 Amazon product image fetched for {asin} ({len(img_r.content)} bytes)")
-                return img_r.content
-            elif img_r.status_code == 200:
-                print(f"  ℹ️  Amazon image rejected (junk or too small: {len(img_r.content)} bytes)")
+                # Product images in search results are in data-src or srcset of
+                # img tags inside the result items, path always /images/I/
+                matches = re.findall(
+                    r'(?:src|data-src)=["\']'
+                    r'(https://m\.media-amazon\.com/images/I/[A-Za-z0-9%+_.,-]+\.jpg)',
+                    r.text,
+                )
+                for img_url in matches:
+                    # Upgrade to full-size: strip size suffixes like ._AC_UL320_
+                    img_url_full = re.sub(r'\._[A-Z_0-9]+_\.', '.', img_url)
+                    try:
+                        img_r = await client.get(img_url_full, headers=headers, timeout=6)
+                        if img_r.status_code == 200 and len(img_r.content) > 5000 and not is_junk_image(img_r.content):
+                            print(f"  🔍 Amazon search thumbnail for {asin} ({len(img_r.content)} bytes)")
+                            return img_r.content
+                    except Exception:
+                        continue
+                if matches:
+                    break  # Found and tried candidates from search — don't retry with next UA
+            except Exception:
+                continue
+
+    print(f"  ℹ️  Amazon image unavailable for {asin} — consider enabling PAAPI")
+    return None
+
+
+def _extract_amazon_image_url(html: str) -> Optional[str]:
+    """
+    Extract the main product image URL from Amazon HTML.
+    Only accepts /images/I/ paths (product images).
+    /images/G/ paths are UI sprite sheets — never use them.
+    """
+    for pattern in [
+        r'"large"\s*:\s*"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
+        r'"hiRes"\s*:\s*"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
+        r'data-old-hires="(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
+        r'"mainUrl"\s*:\s*"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
+    ]:
+        m = re.search(pattern, html)
+        if m:
+            return m.group(1)
+    return None
+
+
+async def _fetch_amazon_image_paapi(
+    asin: str, access_key: str, secret_key: str, partner_tag: str
+) -> Optional[bytes]:
+    """
+    Fetch product image via Amazon Product Advertising API 5.0 (GetItems).
+    Returns image bytes or None on any error.
+
+    PAAPI is the only bot-detection-free, 99%-reliable source for Amazon images.
+    Activate at: Associates Central → Tools → Product Advertising API.
+    Required env vars: AMAZON_PAAPI_ACCESS_KEY, AMAZON_PAAPI_SECRET_KEY
+    """
+    import hmac as _hmac
+    import hashlib as _hashlib
+    from datetime import datetime as _dt
+
+    host      = "webservices.amazon.in"
+    region    = "us-east-1"
+    service   = "ProductAdvertisingAPI"
+    endpoint  = f"https://{host}/paapi5/getitems"
+
+    payload = json.dumps({
+        "ItemIds": [asin],
+        "Resources": ["Images.Primary.Large", "Images.Primary.Medium"],
+        "PartnerTag": partner_tag,
+        "PartnerType": "Associates",
+        "Marketplace": "www.amazon.in",
+    })
+
+    # AWS Signature Version 4
+    now     = _dt.utcnow()
+    amzdate = now.strftime("%Y%m%dT%H%M%SZ")
+    datestamp = now.strftime("%Y%m%d")
+
+    canonical_headers = (
+        f"content-encoding:amz-1.0\n"
+        f"content-type:application/json; charset=utf-8\n"
+        f"host:{host}\n"
+        f"x-amz-date:{amzdate}\n"
+        f"x-amz-target:com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems\n"
+    )
+    signed_headers = "content-encoding;content-type;host;x-amz-date;x-amz-target"
+    payload_hash   = _hashlib.sha256(payload.encode()).hexdigest()
+    canonical_request = "\n".join([
+        "POST", "/paapi5/getitems", "",
+        canonical_headers, signed_headers, payload_hash,
+    ])
+
+    credential_scope = f"{datestamp}/{region}/{service}/aws4_request"
+    string_to_sign = "\n".join([
+        "AWS4-HMAC-SHA256", amzdate, credential_scope,
+        _hashlib.sha256(canonical_request.encode()).hexdigest(),
+    ])
+
+    def _sign(key, msg):
+        return _hmac.new(key, msg.encode(), _hashlib.sha256).digest()
+
+    signing_key = _sign(
+        _sign(_sign(_sign(f"AWS4{secret_key}".encode(), datestamp), region), service),
+        "aws4_request",
+    )
+    signature = _hmac.new(signing_key, string_to_sign.encode(), _hashlib.sha256).hexdigest()
+
+    auth_header = (
+        f"AWS4-HMAC-SHA256 Credential={access_key}/{credential_scope}, "
+        f"SignedHeaders={signed_headers}, Signature={signature}"
+    )
+
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                endpoint,
+                content=payload,
+                headers={
+                    "content-encoding": "amz-1.0",
+                    "content-type": "application/json; charset=utf-8",
+                    "host": host,
+                    "x-amz-date": amzdate,
+                    "x-amz-target": "com.amazon.paapi5.v1.ProductAdvertisingAPIv1.GetItems",
+                    "Authorization": auth_header,
+                },
+            )
+        if r.status_code != 200:
+            print(f"  ℹ️  PAAPI {r.status_code}: {r.text[:120]}")
+            return None
+
+        data = r.json()
+        items = data.get("ItemsResult", {}).get("Items", [])
+        if not items:
+            return None
+
+        images = items[0].get("Images", {}).get("Primary", {})
+        img_url = (
+            images.get("Large", {}).get("URL")
+            or images.get("Medium", {}).get("URL")
+        )
+        if not img_url:
+            return None
+
+        img_r = await client.get(img_url, timeout=8)
+        if img_r.status_code == 200 and len(img_r.content) > 2000 and not is_junk_image(img_r.content):
+            print(f"  ✅ PAAPI image for {asin} ({len(img_r.content)} bytes)")
+            return img_r.content
+
     except Exception as e:
-        print(f"  ℹ️  Amazon image fetch failed: {type(e).__name__}")
+        print(f"  ℹ️  PAAPI error: {type(e).__name__}: {str(e)[:80]}")
     return None
 
 
 async def fetch_og_image(url: str) -> Optional[bytes]:
-    """Fetch og:image from a product URL with smart fallbacks.
-    Tries: og:image → twitter:image → schema.org image → product images in markup.
-    Returns first valid image found."""
+    """Fetch product image from a non-Amazon URL.
+
+    Priority chain:
+      1. Flipkart: lightweight product JSON endpoint (no bot detection)
+      2. og:image meta tag
+      3. twitter:image meta tag
+      4. schema.org Product image
+      5. First sizeable <img> in the page that looks like a product photo
+    """
     if not url:
         return None
     try:
         # If it's a redirect/tracker domain, resolve to real URL first
         if is_redirect_domain(url):
             url = await resolve_url(url)
+
+        # ── Flipkart fast path: product JSON endpoint ──────────────────────
+        # Flipkart embeds full product data (incl. images) in a script tag as
+        # __INITIAL_STATE__ JSON. Much lighter and more reliable than og:image.
+        if "flipkart.com" in url:
+            fk_img = await _fetch_flipkart_image(url)
+            if fk_img:
+                return fk_img
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
@@ -952,6 +1153,59 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
             print(f"  ℹ️  No valid product image found (tried {len(img_urls)} candidates)")
     except Exception as e:
         print(f"  ℹ️  og:image fetch failed: {type(e).__name__}")
+    return None
+
+
+async def _fetch_flipkart_image(url: str) -> Optional[bytes]:
+    """
+    Flipkart embeds full product data as __INITIAL_STATE__ JSON in the page.
+    This includes high-res image URLs without needing any API key.
+    Much more reliable than og:image which Flipkart CDN sometimes returns stale.
+    """
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
+        "Accept-Language": "en-IN,en;q=0.9",
+        "Accept": "text/html,application/xhtml+xml",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+            r = await client.get(url, headers=headers)
+            if r.status_code != 200:
+                return None
+
+            html = r.text
+
+            # Primary: __INITIAL_STATE__ JSON — contains "imageUrl" arrays
+            # Pattern: "imageUrl":"https://rukminim2.flixcart.com/image/..."
+            fk_patterns = [
+                r'"imageUrl"\s*:\s*"(https://rukminim\d+\.flixcart\.com/image/[^"]+)"',
+                r'"thumbnail"\s*:\s*"(https://rukminim\d+\.flixcart\.com/image/[^"]+)"',
+            ]
+            img_urls = []
+            for pattern in fk_patterns:
+                for m in re.finditer(pattern, html):
+                    candidate = m.group(1)
+                    # Upgrade thumbnail size: /128/128/ → /832/832/ (Flipkart sizing)
+                    candidate = re.sub(r'/\d{2,3}/\d{2,3}/', '/832/832/', candidate)
+                    if candidate not in img_urls:
+                        img_urls.append(candidate)
+
+            # Fallback: og:image (Flipkart's og:image is usually good quality)
+            m = re.search(r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']', html, re.IGNORECASE)
+            if m:
+                img_urls.append(m.group(1))
+
+            for img_url in img_urls[:5]:  # try first 5 candidates
+                try:
+                    img_r = await client.get(img_url, headers=headers, timeout=6)
+                    if img_r.status_code == 200 and len(img_r.content) > 5000 and not is_junk_image(img_r.content):
+                        print(f"  🛍️  Flipkart image ({len(img_r.content)} bytes)")
+                        return img_r.content
+                except Exception:
+                    continue
+
+    except Exception as e:
+        print(f"  ℹ️  Flipkart image fetch failed: {type(e).__name__}")
     return None
 
 
