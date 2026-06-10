@@ -253,10 +253,61 @@ def post_log(data: dict):
 
 @app.get("/admin/logs")
 def get_logs(limit: int = 300):
-    """Live pipeline logs from in-memory store (last ~5 minutes of activity)."""
+    """Pipeline logs — from in-memory store if available, else falls back to DB."""
     global pipeline_logs_store
-    logs = list(reversed(pipeline_logs_store))[:limit]
-    return {"logs": logs, "count": len(logs), "source": "live"}
+
+    # If we have live in-memory logs, use those (fast path)
+    if pipeline_logs_store:
+        logs = list(reversed(pipeline_logs_store))[:limit]
+        return {"logs": logs, "count": len(logs), "source": "live"}
+
+    # After a restart the in-memory store is empty — read from DB instead
+    try:
+        from datetime import datetime, timezone, timedelta
+        db = get_db_admin()
+        cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
+        result = (
+            db.table("pipeline_logs")
+            .select("*")
+            .gte("timestamp_fetched", cutoff)
+            .order("timestamp_fetched", desc=True)
+            .limit(limit)
+            .execute()
+        )
+        rows = result.data or []
+
+        # Re-shape DB rows to match the in-memory log format the frontend expects
+        logs = []
+        for r in rows:
+            llm = r.get("llm_decision") or {}
+            logs.append({
+                "raw_text": r.get("raw_text", ""),
+                "source_channel": r.get("source_channel", ""),
+                "is_valid": r.get("is_valid", False),
+                "filter_reason": r.get("filter_reason", ""),
+                "copy": r.get("copy") or llm.get("copy", ""),
+                "image_url": r.get("image_url", ""),
+                "image_source": r.get("image_source", ""),
+                "timestamp_fetched": r.get("timestamp_fetched"),
+                "created_at": r.get("created_at"),
+                "deal_id": r.get("deal_id", ""),
+                "admin_approved": r.get("admin_approved", False),
+                "llm_decision": {
+                    "platform": r.get("platform") or llm.get("platform", ""),
+                    "url": r.get("affiliate_url") or llm.get("url", ""),
+                    "copy": r.get("copy") or llm.get("copy", ""),
+                    "reason": r.get("filter_reason") or llm.get("reason", ""),
+                    "deal_price": r.get("deal_price") or llm.get("deal_price"),
+                    "original_price": r.get("original_price") or llm.get("original_price"),
+                    "coupon_code": r.get("coupon_code") or llm.get("coupon_code"),
+                },
+                "copy_quality_score": r.get("copy_quality_score"),
+                "quality_reasons": r.get("quality_reasons"),
+            })
+        return {"logs": logs, "count": len(logs), "source": "db"}
+    except Exception as e:
+        print(f"[LOGS] DB fallback failed: {e}")
+        return {"logs": [], "count": 0, "source": "error", "error": str(e)}
 
 
 @app.get("/admin/logs/archive")
