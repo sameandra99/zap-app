@@ -10,48 +10,51 @@ export function useNotifications() {
 
 async function registerForPushNotifications() {
   try {
-    // expo-notifications remote push not supported in Expo Go SDK 53+
-    // Silently skip — will work in EAS dev build / production build
-    const Notifications = await import("expo-notifications").catch(() => null);
-    if (!Notifications) return;
+    // Direct Firebase FCM — no Expo middleman
+    const messaging = (await import("@react-native-firebase/messaging")).default;
 
-    Notifications.setNotificationHandler({
-      handleNotification: async () => ({
-        shouldShowAlert: true,
-        shouldPlaySound: true,
-        shouldSetBadge: false,
-      }),
-    });
+    // Request permission (required on iOS, Android 13+)
+    const authStatus = await messaging().requestPermission();
+    const enabled =
+      authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+      authStatus === messaging.AuthorizationStatus.PROVISIONAL;
 
-    const { status: existing } = await Notifications.getPermissionsAsync();
-    let finalStatus = existing;
+    if (!enabled) return;
 
-    if (existing !== "granted") {
-      const { status } = await Notifications.requestPermissionsAsync();
-      finalStatus = status;
-    }
-
-    if (finalStatus !== "granted") return;
-
+    // Set up Android notification channel
     if (Platform.OS === "android") {
-      await Notifications.setNotificationChannelAsync("deals", {
-        name: "Deal alerts",
-        importance: Notifications.AndroidImportance.HIGH,
-        sound: "default",
-      });
+      const notifee = await import("@notifee/react-native").catch(() => null);
+      if (notifee) {
+        await notifee.default.createChannel({
+          id: "deals",
+          name: "Deal alerts",
+          importance: 4, // HIGH
+          sound: "default",
+        });
+      }
     }
 
-    const tokenData = await Notifications.getExpoPushTokenAsync({
-      projectId: "cf611307-83c1-4269-b55b-87658b3b7dbf",
-    }).catch(() => null);
-    if (!tokenData?.data) return;
+    // Get FCM token directly from Firebase
+    const token = await messaging().getToken();
+    if (!token) return;
 
+    // Register with our API
     await fetch(`${API_BASE}/register-device`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ token: tokenData.data }),
+      body: JSON.stringify({ token }),
     });
-  } catch (_) {
+
+    // Refresh token handler
+    messaging().onTokenRefresh(async (newToken) => {
+      await fetch(`${API_BASE}/register-device`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ token: newToken }),
+      });
+    });
+  } catch (e) {
     // Never crash the app over notifications
+    console.log("[Push] setup error:", e?.message);
   }
 }
