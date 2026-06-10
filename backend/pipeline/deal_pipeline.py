@@ -575,6 +575,41 @@ def detect_platform(url: str) -> str:
     return ""
 
 
+def is_product_url(url: str) -> bool:
+    """
+    True if the URL is a usable deal destination (not a dead-end home/search page).
+
+    Conservative by design — we only DROP a deal when we're confident the link
+    goes nowhere useful. Two tiers:
+
+      STRICT (Amazon, Flipkart): their product pages have an unambiguous shape
+        (/dp/{ASIN}, /p/{itm-id}), and their non-product forms (/deals,
+        /dl/search) are clear dead-ends. Require the product shape.
+
+      LENIENT (Myntra, Ajio, Nykaa, unknown hosts): a curated listing/category
+        page (e.g. myntra.com/floor-mats-and-dhurries?sort=discount) is still a
+        legitimate, postable deal. Only reject the bare home page or an explicit
+        site search.
+    """
+    if not url:
+        return False
+    h = host_of(url)
+    path = urlparse(url).path.lower()
+
+    # STRICT tier
+    if "amazon" in h:
+        return bool(re.search(r'/(dp|gp/product|gp/aw/d)/[a-z0-9]{8,}', path, re.IGNORECASE))
+    if "flipkart" in h:
+        return "/p/itm" in path
+
+    # LENIENT tier — reject only home root or explicit search
+    if path in ("", "/"):
+        return False
+    if "/search" in path or path.startswith("/s") and len(path) <= 3:
+        return False
+    return True
+
+
 def pick_best_url(urls: list, source_channel: str = "") -> str:
     """
     Deterministically choose the best product URL from a message's URLs.
@@ -639,10 +674,24 @@ def canonicalize_url(url: str) -> str:
                 return f"https://www.amazon.in/dp/{asin}"
             return strip_tracking_generic(url)
 
-        # Flipkart → product path + pid (pid is REQUIRED to load the product)
+        # Flipkart → canonical /{slug}/p/{itm-id}?pid={pid}
+        # A Flipkart product is uniquely identified by its /p/itmXXXX path segment
+        # plus the pid query param. Tracking wrappers like /dl/a/p/, /dl/flipkart/p/
+        # prepend junk to the path — strip all of that and rebuild a clean URL.
         if "flipkart" in h:
             q = dict(parse_qsl(p.query))
             pid = q.get("pid")
+            # Extract the itm product id from anywhere in the path
+            m = re.search(r'/p/(itm[0-9a-z]+)', p.path, re.IGNORECASE)
+            itm = m.group(1) if m else None
+            # Try to recover a real product slug (the segment right before /p/)
+            slug_m = re.search(r'/([a-z0-9-]+)/p/itm', p.path, re.IGNORECASE)
+            slug = slug_m.group(1) if slug_m and slug_m.group(1) not in ("dl", "flipkart", "a") else "product"
+            if itm:
+                base = f"https://www.flipkart.com/{slug}/p/{itm}"
+                return f"{base}?pid={pid}" if pid else base
+            # No product id in path (e.g. /dl/search, listing/home page) — not a
+            # real product link. Return cleaned path so the caller can filter it.
             base = f"https://www.flipkart.com{p.path}"
             return f"{base}?pid={pid}" if pid else base
 
@@ -1581,6 +1630,23 @@ async def process_message(
                 "was_posted": False, "source_channel": source_channel,
                 "timestamp_fetched": timestamp_fetched,
                 "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+            })
+            return
+
+        # 5b. Reject non-product destinations — when a short link resolves to a
+        #     search/listing/home page (e.g. flipkart.com/dl/search, an expired
+        #     link that bounced to a category page), there's no real product to
+        #     send users to. Better to drop than post a dead-end link.
+        if not is_product_url(affiliate_url):
+            print(f"  🚫 Non-product destination ({affiliate_url[:60]}), skipping")
+            _try_log(sb, {
+                "raw_text": raw_text[:500], "llm_decision": result,
+                "is_valid_deal": False,
+                "filter_reason": f"Non-product page (search/listing/home): {host_of(affiliate_url)}",
+                "was_posted": False, "source_channel": source_channel,
+                "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+                "affiliate_url": affiliate_url, "resolved_url": resolved_url,
             })
             return
 

@@ -637,7 +637,8 @@ def get_link_operations(limit: int = 100):
     db = get_db_admin()
     try:
         logs_result = db.table("pipeline_logs").select(
-            "id, raw_text, affiliate_url, resolved_url, platform, timestamp_fetched, source_channel, copy"
+            "id, raw_text, affiliate_url, resolved_url, platform, timestamp_fetched, "
+            "source_channel, copy, is_valid, deal_id, filter_reason"
         ).order("timestamp_fetched", desc=True).limit(limit).execute()
 
         ops = []
@@ -654,12 +655,31 @@ def get_link_operations(limit: int = 100):
             # If no resolved intermediate stored (old rows / direct retailer), fall back to clean
             affiliate_view = resolved_url or clean_url
 
+            # Status: what actually happened to this row in the pipeline.
+            # A row is "posted" when it was a valid deal that got a deal_id.
+            if log.get("is_valid") and log.get("deal_id"):
+                status = "posted"
+            else:
+                reason = (log.get("filter_reason") or "").lower()
+                if "duplicate" in reason:
+                    status = "duplicate"
+                elif "pending" in reason or "redirect-domain" in reason:
+                    status = "held"
+                elif "blocked" in reason:
+                    status = "blocked"
+                elif "non-product" in reason or "no usable product" in reason:
+                    status = "dead_link"
+                else:
+                    status = "filtered"
+
             ops.append({
                 "id":            log.get("id"),
                 "timestamp":     log.get("timestamp_fetched"),
                 "channel":       log.get("source_channel", ""),
                 "platform":      platform,
                 "copy":          copy[:60],
+                "status":        status,
+                "filter_reason": log.get("filter_reason") or "",
                 "raw_urls":      raw_urls[:3],    # short links from the message
                 "affiliate_url": affiliate_view,  # resolved destination, still has tracking
                 "zap_deal_url":  clean_url,        # canonical clean URL we store & serve

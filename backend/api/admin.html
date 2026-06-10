@@ -160,6 +160,21 @@ let allLogs = [];
 let allDeals = [];
 let allLinkOps = [];
 let allDomains = [];
+let linkOpsStatus = 'posted';  // Link Ops status filter — default to what users actually see
+
+const STATUS_META = {
+  posted:    { label: '✓ Posted',    color: '#16A34A', bg: '#DCFCE7' },
+  filtered:  { label: 'Filtered',    color: '#78716C', bg: '#F5F5F4' },
+  duplicate: { label: 'Duplicate',   color: '#9333EA', bg: '#F3E8FF' },
+  held:      { label: 'Held',        color: '#CA8A04', bg: '#FEF9C3' },
+  dead_link: { label: 'Dead link',   color: '#DC2626', bg: '#FEE2E2' },
+  blocked:   { label: 'Blocked',     color: '#B91C1C', bg: '#FEE2E2' },
+};
+
+function setLinkOpsStatus(s) {
+  linkOpsStatus = s;
+  renderLinkOps(document.getElementById('search').value.toLowerCase().trim());
+}
 
 async function load(showSpinner = true) {
   if (showSpinner) document.getElementById('content').innerHTML = '<div class="empty">Loading...</div>';
@@ -344,28 +359,56 @@ function render() {
 }
 
 function renderLinkOps(q) {
-  let items = allLinkOps;
+  // Count rows per status (before status filter, after search) for the filter pills
+  const searchMatch = op =>
+    !q ||
+    (op.raw_urls || []).some(u => u.includes(q)) ||
+    (op.affiliate_url || '').includes(q) ||
+    (op.zap_deal_url || '').includes(q) ||
+    (op.channel || '').toLowerCase().includes(q) ||
+    (op.platform || '').toLowerCase().includes(q);
 
-  // Filter by search query
-  if (q) {
-    items = items.filter(op =>
-      (op.short_urls || []).some(u => u.includes(q)) ||
-      (op.direct_urls || []).some(u => u.includes(q)) ||
-      (op.affiliate_url || '').includes(q) ||
-      (op.channel || '').toLowerCase().includes(q) ||
-      (op.platform || '').toLowerCase().includes(q)
-    );
-  }
+  const searched = allLinkOps.filter(searchMatch);
+  const counts = {};
+  searched.forEach(op => { counts[op.status] = (counts[op.status] || 0) + 1; });
+  const total = searched.length;
+
+  // Status filter pills — 'all' plus each status that has rows
+  const pill = (key, label, n) => {
+    const active = linkOpsStatus === key;
+    const meta = STATUS_META[key];
+    const bg = active ? (meta ? meta.color : '#0369A1') : '#fff';
+    const fg = active ? '#fff' : '#57534E';
+    return '<button onclick="setLinkOpsStatus(\'' + key + '\')" style="'
+      + 'border:1px solid #E7E5E4;border-radius:999px;padding:5px 12px;margin:0 6px 6px 0;'
+      + 'font-size:12px;font-weight:600;cursor:pointer;background:' + bg + ';color:' + fg + '">'
+      + label + ' <span style="opacity:.7">' + n + '</span></button>';
+  };
+
+  let pillsHtml = pill('all', 'All', total);
+  ['posted','filtered','duplicate','held','dead_link','blocked'].forEach(k => {
+    if (counts[k]) pillsHtml += pill(k, STATUS_META[k].label, counts[k]);
+  });
+
+  // Apply status filter
+  let items = (linkOpsStatus === 'all') ? searched : searched.filter(op => op.status === linkOpsStatus);
+
+  const filterBar = '<div style="padding:12px 4px 4px;display:flex;flex-wrap:wrap;align-items:center">'
+    + pillsHtml
+    + '<span style="margin-left:auto;font-size:11px;color:#A8A29E">'
+    + 'Showing ' + items.length + ' of ' + total + ' — only “Posted” reaches users</span></div>';
 
   if (!items.length) {
-    document.getElementById('content').innerHTML = '<div class="empty">No URL transformations found.</div>';
+    document.getElementById('content').innerHTML = filterBar
+      + '<div class="empty">No rows for this status.</div>';
     return;
   }
 
-  document.getElementById('content').innerHTML = `
+  document.getElementById('content').innerHTML = filterBar + `
     <table>
       <thead><tr>
         <th>Time</th>
+        <th>Status</th>
         <th>Channel</th>
         <th>Platform</th>
         <th>Copy</th>
@@ -379,6 +422,11 @@ function renderLinkOps(q) {
           const channel = op.channel || '—';
           const platform = op.platform || 'unknown';
           const copy = op.copy || '—';
+
+          const sm = STATUS_META[op.status] || { label: op.status, color: '#57534E', bg: '#F5F5F4' };
+          const statusHtml = '<span title="' + esc(op.filter_reason || '') + '" style="'
+            + 'display:inline-block;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:600;'
+            + 'color:' + sm.color + ';background:' + sm.bg + '">' + sm.label + '</span>';
 
           const rawHtml = (op.raw_urls || []).length
             ? op.raw_urls.map(u => '<a href="' + esc(u) + '" target="_blank" class="url-cell raw" title="' + esc(u) + '">' + esc(u.substring(0, 45)) + '</a>').join('')
@@ -394,6 +442,7 @@ function renderLinkOps(q) {
 
           return '<tr>'
             + '<td><span class="time-cell">' + timestamp + '</span></td>'
+            + '<td>' + statusHtml + '</td>'
             + '<td><span class="channel">' + esc(channel) + '</span></td>'
             + '<td><span style="font-size:11px;font-weight:600">' + esc(platform) + '</span></td>'
             + '<td><div class="copy-text">' + esc(copy) + '</div></td>'
