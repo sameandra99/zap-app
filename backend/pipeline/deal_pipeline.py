@@ -421,18 +421,49 @@ async def resolve_url(url: str) -> str:
     """
     if not url:
         return url
+
+    headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"}
+    current = url
     try:
-        headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"}
-        # Use GET (not HEAD) to ensure all redirect layers are followed, including tracking URLs
         async with httpx.AsyncClient(timeout=8, follow_redirects=True, max_redirects=10) as client:
-            # Stream the GET to avoid downloading massive payloads
-            async with client.stream("GET", url, headers=headers) as r:
-                final = str(r.url)
+            # Up to 3 unwrap passes: follow HTTP redirects, then if we land on an
+            # interstitial that embeds the destination in a query param (?dl=, ?url=…),
+            # extract it and resolve THAT. Handles linkredirect.in, cuelinks, etc.
+            for _ in range(3):
+                async with client.stream("GET", current, headers=headers) as r:
+                    final = str(r.url)
+                dest = embedded_destination(final)
+                if dest and dest != final:
+                    current = dest          # unwrap and follow the real destination
+                    continue
                 if final != url:
                     print(f"  🔗 Resolved: {url[:40]} → {final[:60]}")
                 return final
+            return current
     except Exception:
-        return url
+        # If something failed mid-unwrap, return the best destination we have
+        dest = embedded_destination(current)
+        return dest or current
+
+
+# Affiliate interstitials embed the real product URL in one of these query params.
+_DEST_PARAMS = ("dl", "url", "u", "r", "link", "redirect", "target", "to", "goto", "murl", "ued")
+
+
+def embedded_destination(url: str) -> str:
+    """If a URL embeds its real destination in a query param (?dl=https%3A%2F%2F…),
+    return the decoded destination URL. Else empty string."""
+    try:
+        from urllib.parse import parse_qs, unquote
+        q = parse_qs(urlparse(url).query)
+        for k in _DEST_PARAMS:
+            if k in q and q[k]:
+                v = unquote(q[k][0])
+                if v.startswith("http"):
+                    return v
+    except Exception:
+        pass
+    return ""
 
 
 # ════════════════════════════════════════════════════════════════════════════
