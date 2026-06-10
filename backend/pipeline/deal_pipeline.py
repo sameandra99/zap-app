@@ -106,8 +106,17 @@ Rules:
 - NEVER use: "Buy now", "Shop now", "Check out", "Get it", "Limited time", "Flash sale", "Don't miss", "GRAB:", "Lowest:"
 - NEVER add opinion or commentary: no "great deal", "solid price", "worth it"
 - NEVER include model/SKU numbers (e.g. "1118", "518", "V4 NL", product codes) — use only the product name
-- Use the LISTED SALE PRICE shown on the page — NOT effective price after cashback/bank offers
-- Include price in ₹ with **bold**
+- *** CRITICAL — NEVER FABRICATE A PRICE. ***
+    Use ONLY a price that LITERALLY appears in the message text. You do NOT see
+    the product page — you only have the message. Do NOT guess, estimate, round,
+    or infer a price from the discount %, the product type, or anything else.
+    If the message has NO explicit ₹ amount, your copy MUST NOT contain any ₹
+    price. Instead describe the discount only, e.g. "Bergner cookware at 59% off"
+    or "Floral king bedsheet with 2 pillow covers, 86% off". A wrong price
+    destroys user trust — when in doubt, omit the price.
+- Copy the price EXACTLY as written in the message (same digits). Use the listed
+  sale price, NOT the effective price after cashback/bank offers.
+- Include the price in ₹ with **bold** ONLY when it is present in the message
 - Mention coupon code if present naturally: "use code XYZ"
 - Max 2 short sentences
 - Tone: neutral, factual, direct — state the product and price, nothing more
@@ -260,6 +269,61 @@ async def send_push_notification(title: str, body: str, deal_id: str = None):
             await client.post(f"{api_url}/notify", json=payload)
     except Exception as e:
         print(f"  [PUSH] {type(e).__name__}: {str(e)[:60]}")
+
+
+_DISCOUNT_RE = re.compile(r'(\d{1,3})\s*%\s*off', re.IGNORECASE)
+_PRICE_IN_COPY_RE = re.compile(r'\s*(?:at|for|@|just|only)?\s*\*{0,2}\s*₹\s*([\d,]+)\s*\*{0,2}', re.IGNORECASE)
+
+
+def _raw_price_set(raw_text: str) -> set:
+    """All multi-digit numbers in the raw message (comma-stripped) — candidate prices."""
+    nums = set()
+    for m in re.findall(r'₹?\s*([\d,]{2,})', raw_text or ""):
+        n = m.replace(',', '')
+        if n.isdigit():
+            nums.add(n)
+    return nums
+
+
+def validate_copy_price(copy: str, raw_text: str) -> tuple:
+    """
+    Anti-hallucination guard: remove any ₹ price from the generated copy that
+    does NOT literally appear in the raw Telegram message.
+
+    The LLM only sees the message (not the product page), so any price it states
+    must come from that message. If it invents one (e.g. guessing from a
+    discount %), we strip the price clause and, when the message mentions a
+    discount, substitute that instead.
+
+    Returns (cleaned_copy, was_fabricated).
+    """
+    if not copy:
+        return copy, False
+    raw_nums = _raw_price_set(raw_text)
+    state = {"fabricated": False}
+
+    def _repl(m):
+        num = m.group(1).replace(',', '')
+        if num not in raw_nums:
+            state["fabricated"] = True
+            return ' '
+        return m.group(0)
+
+    cleaned = _PRICE_IN_COPY_RE.sub(_repl, copy)
+    if not state["fabricated"]:
+        return copy, False
+
+    # Tidy up artifacts left by removing the price clause
+    cleaned = re.sub(r'\s{2,}', ' ', cleaned)
+    cleaned = re.sub(r'\s+([.,])', r'\1', cleaned)
+    cleaned = cleaned.strip().rstrip('—-,;: ').strip()
+    # If the message states a discount and the copy no longer mentions one, add it
+    dm = _DISCOUNT_RE.search(raw_text or "")
+    if dm and '% off' not in cleaned.lower():
+        cleaned = f"{cleaned.rstrip('.')} — {dm.group(1)}% off."
+    elif cleaned and not cleaned.endswith('.'):
+        cleaned += '.'
+    return cleaned, True
 
 
 async def call_llm(raw_text: str, extracted_urls: list = None, tone: str = "default", copy_quality_score: int = None) -> dict:
@@ -1540,6 +1604,24 @@ async def process_message(
         is_valid = result.get("is_valid_deal", False)
         reason = result.get("reason", "")
         deal_id = None
+
+        # Anti-hallucination: strip any price the LLM invented that isn't in the
+        # raw message. A fabricated price is worse than no price.
+        if is_valid and result.get("copy"):
+            fixed_copy, fabricated = validate_copy_price(result["copy"], raw_text)
+            if fabricated:
+                print(f"  🛡️  Fabricated price removed from copy")
+                print(f"       before: {result['copy']}")
+                print(f"       after:  {fixed_copy}")
+                result["copy"] = fixed_copy
+                # A fabricated headline price means the parsed deal_price is also
+                # untrustworthy — drop it unless it literally appears in the message.
+                raw_nums = _raw_price_set(raw_text)
+                for k in ("deal_price", "original_price"):
+                    val = (result.get(k) or "")
+                    digits = re.sub(r'[^\d]', '', str(val))
+                    if digits and digits not in raw_nums:
+                        result[k] = None
 
         # Use provided timestamp or fall back to now
         if not timestamp_fetched:
