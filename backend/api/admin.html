@@ -161,8 +161,8 @@ let allDeals = [];
 let allLinkOps = [];
 let allDomains = [];
 
-async function load() {
-  document.getElementById('content').innerHTML = '<div class="empty">Loading...</div>';
+async function load(showSpinner = true) {
+  if (showSpinner) document.getElementById('content').innerHTML = '<div class="empty">Loading...</div>';
   const [logsRes, dealsRes, linkOpsRes, domainsRes] = await Promise.all([
     fetch('/admin/logs?limit=300').then(r=>r.json()).catch(()=>({logs:[]})),  // Live logs only
     fetch('/admin/deals?limit=300').then(r=>r.json()).catch(()=>({deals:[]})),
@@ -614,7 +614,17 @@ function esc(s) {
 }
 
 load();
-setInterval(load, 30000);
+
+// Background refresh every 60s — silently updates data + stats without
+// re-rendering the visible content (no spinner, no scroll jump).
+// Only re-renders if user is on a tab that shows live counts (all/posted/filtered).
+setInterval(async () => {
+  await load(false);  // fetch fresh data, no spinner
+  // Re-render current view only if not link-ops or domains (those are static enough)
+  if (activeTab !== 'linkops' && activeTab !== 'domains') {
+    render(document.getElementById('search').value.toLowerCase().trim());
+  }
+}, 60000);
 </script>
 </body>
 </html>
