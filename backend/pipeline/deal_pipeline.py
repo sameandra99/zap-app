@@ -711,7 +711,16 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
 
 
 def extract_urls_from_text(text: str) -> list:
-    """Extract all URLs from raw Telegram text including Markdown links [text](url)."""
+    """Extract all URLs from raw Telegram text including Markdown links [text](url).
+
+    For DesiDime-style messages with Read More + Buy Now pairs, only the Buy Now
+    URL is returned — Read More goes to DesiDime's page, not the product.
+    """
+    # DesiDime format: prefer Buy Now over Read More
+    buy_now_urls = re.findall(r'Buy Now\s*[-–]\s*(https?://\S+)', text, re.IGNORECASE)
+    if buy_now_urls:
+        return buy_now_urls  # Only Buy Now links — skip Read More entirely
+
     urls = []
     urls += re.findall(r'\[.*?\]\((https?://[^\s)]+)\)', text)
     urls += re.findall(r'(?<!\()(https?://[^\s)\]]+)', text)
@@ -731,20 +740,49 @@ def split_multi_deal_message(text: str) -> list[dict]:
     Returns a list of {text, url} dicts — one per deal.
     Returns empty list if message is a single deal (caller handles normally).
 
-    Detects patterns like:
-      Brand A : [Buy Now](url1)
-      Brand B : [Buy Now](url2)
-    Or:
-      • Product A ₹499 https://url1
-      • Product B ₹299 https://url2
+    Handles three formats:
+      1. DesiDime style — each deal has "Read More - url" + "Buy Now - url"
+         → splits into one deal per Buy Now link (ignores Read More)
+      2. Markdown links — Brand A : [Buy Now](url1) / Brand B : [Buy Now](url2)
+      3. Bullet list — • Product A ₹499 https://url1 / • Product B ₹299 https://url2
     """
-    # Extract all (label_text, url) pairs from markdown links
+
+    # ── Format 1: DesiDime "Read More / Buy Now" block pattern ─────────────
+    # Each deal block: [title text] + "Read More - url" + "Buy Now - url"
+    # We only want Buy Now (direct product link); Read More goes to DesiDime page
+    if re.search(r'Buy Now\s*[-–]', text, re.IGNORECASE):
+        # Split on Buy Now markers: ["pre_text", "url1", "mid_text", "url2", ...]
+        chunks = re.split(r'\nBuy Now\s*[-–]\s*(https?://\S+)', text, flags=re.IGNORECASE)
+        desidime_pairs = []
+        for i in range(1, len(chunks), 2):
+            buy_now_url = chunks[i].strip()
+            title_block = chunks[i - 1].strip()
+            # Strip out the "Read More - url" line — it goes to DesiDime, not product
+            title_block = re.sub(r'\nRead More\s*[-–]\s*https?://\S+', '', title_block, flags=re.IGNORECASE).strip()
+            title_block = re.sub(r'^Read More\s*[-–]\s*https?://\S+\n?', '', title_block, flags=re.IGNORECASE).strip()
+            # Take the last non-empty paragraph as the deal title
+            paragraphs = [p.strip() for p in re.split(r'\n{2,}', title_block) if p.strip()]
+            title = paragraphs[-1] if paragraphs else title_block
+            if title and buy_now_url:
+                desidime_pairs.append((title, buy_now_url))
+
+        if len(desidime_pairs) >= 2:
+            return [{"text": title, "url": url} for title, url in desidime_pairs]
+        elif len(desidime_pairs) == 1:
+            # Single DesiDime deal — don't split, but scrubbed text + Buy Now URL
+            # Return empty list so caller handles normally, but inject the Buy Now URL hint
+            return []
+
+    # ── Format 2: Markdown links ─────────────────────────────────────────────
     md_pairs = re.findall(r'([^\n*\[\]]{3,60}?)\s*[:\-–]?\s*[🛒🔗]?\s*\[.*?\]\((https?://[^\s)]+)\)', text)
 
-    # Also extract plain URL lines
+    # ── Format 3: Plain URL lines (bullet/numbered) ──────────────────────────
     plain_pairs = []
     for line in text.split('\n'):
         line = line.strip().lstrip('•*-– ')
+        # Skip "Read More" / "Buy Now" standalone lines — handled above or irrelevant
+        if re.match(r'^(Read More|Buy Now)\s*[-–]', line, re.IGNORECASE):
+            continue
         urls_in_line = re.findall(r'(https?://[^\s)]+)', line)
         if urls_in_line:
             label = re.sub(r'https?://\S+', '', line).strip().rstrip(':–-').strip()
@@ -912,6 +950,8 @@ async def process_message(
             "timestamp_fetched": timestamp_fetched,
             "copy_quality_score": copy_quality,
             "quality_reasons": quality_reasons,
+            "affiliate_url": affiliate_url,   # resolved URL (after redirect resolution)
+            "copy": result.get("copy", ""),
         })
 
     except json.JSONDecodeError:

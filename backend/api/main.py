@@ -227,7 +227,7 @@ def post_log(data: dict):
             "deal_price": data.get("llm_decision", {}).get("deal_price"),
             "original_price": data.get("llm_decision", {}).get("original_price"),
             "coupon_code": data.get("llm_decision", {}).get("coupon_code"),
-            "affiliate_url": data.get("llm_decision", {}).get("url"),
+            "affiliate_url": data.get("affiliate_url") or data.get("llm_decision", {}).get("url"),
             "llm_decision": data.get("llm_decision"),
             "admin_approved": data.get("admin_approved", False),
             "deal_id": data.get("deal_id"),
@@ -532,43 +532,59 @@ def get_overrides(limit: int = 20):
 def get_link_operations(limit: int = 100):
     """
     URL transformation tracking — three-column view:
-      Raw URL     = original URL(s) extracted from the Telegram message
-      Affiliate URL = final URL stored in DB (with ?tag=, utm_ etc.)
-      Zap Deal URL  = clean product URL with all tracking params stripped
+      Raw URL      = original URL(s) from the Telegram message (short or direct)
+      Affiliate URL = resolved + affiliate-tagged URL stored in deals table
+      Zap Deal URL  = affiliate URL with all tracking params stripped (clean product link)
     """
-    from pipeline.deal_pipeline import extract_urls_from_text, strip_affiliate_params
+    from pipeline.deal_pipeline import extract_urls_from_text, strip_affiliate_params, is_redirect_domain
 
     db = get_db_admin()
     try:
-        result = db.table("pipeline_logs").select(
-            "id, raw_text, affiliate_url, platform, timestamp_fetched, source_channel, copy"
+        # Get recent logs
+        logs_result = db.table("pipeline_logs").select(
+            "id, raw_text, affiliate_url, platform, timestamp_fetched, source_channel, copy, deal_id"
         ).order("timestamp_fetched", desc=True).limit(limit).execute()
 
-        ops = []
-        for log in result.data or []:
-            raw_text    = log.get("raw_text", "")
-            affiliate_url = log.get("affiliate_url", "") or ""
-            platform    = log.get("platform", "")
-            copy        = log.get("copy", "")
+        # Build a map of deal_id → resolved affiliate_url from deals table
+        deal_ids = [r["deal_id"] for r in (logs_result.data or []) if r.get("deal_id")]
+        deals_map = {}
+        if deal_ids:
+            deals_result = db.table("deals").select("id, affiliate_url, copy").in_("id", deal_ids[:200]).execute()
+            for d in (deals_result.data or []):
+                deals_map[d["id"]] = d.get("affiliate_url", "")
 
-            # All URLs from the original Telegram message (raw input)
+        ops = []
+        for log in logs_result.data or []:
+            raw_text      = log.get("raw_text", "")
+            log_url       = log.get("affiliate_url", "") or ""
+            platform      = log.get("platform", "")
+            copy          = log.get("copy", "") or ""
+            deal_id       = log.get("deal_id", "")
+
+            # All URLs extracted from original Telegram message
             raw_urls = extract_urls_from_text(raw_text)
 
-            # Clean product URL — affiliate URL with tracking params stripped
-            zap_deal_url = strip_affiliate_params(affiliate_url) if affiliate_url else ""
+            # Use resolved URL from deals table if available (it went through redirect resolution)
+            # Fall back to log URL if not in deals (filtered deals don't have a deals row)
+            resolved_url = deals_map.get(deal_id, "") or log_url
 
+            # Zap Deal URL = resolved URL with tracking params stripped
+            zap_deal_url = strip_affiliate_params(resolved_url) if resolved_url else ""
+
+            # Only show if it's different from the raw URL (otherwise nothing useful to show)
             ops.append({
-                "id":           log.get("id"),
-                "timestamp":    log.get("timestamp_fetched"),
-                "channel":      log.get("source_channel", ""),
-                "platform":     platform,
-                "copy":         copy[:60] if copy else "",
-                "raw_urls":     raw_urls[:3],       # up to 3 original URLs from message
-                "affiliate_url": affiliate_url,     # stored URL with tracking
-                "zap_deal_url": zap_deal_url,       # clean URL, no tracking params
+                "id":            log.get("id"),
+                "timestamp":     log.get("timestamp_fetched"),
+                "channel":       log.get("source_channel", ""),
+                "platform":      platform,
+                "copy":          copy[:60],
+                "raw_urls":      raw_urls[:3],     # original message URLs
+                "affiliate_url": resolved_url,     # resolved + tagged URL
+                "zap_deal_url":  zap_deal_url,     # clean URL, no tracking
             })
 
         return {"operations": ops, "count": len(ops)}
     except Exception as e:
         print(f"[LINK-OPS] Error: {e}")
+        import traceback; traceback.print_exc()
         return {"operations": [], "count": 0, "error": str(e)}
