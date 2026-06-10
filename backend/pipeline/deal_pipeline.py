@@ -63,7 +63,7 @@ ALWAYS ACCEPT these brand × category combinations:
   BEAUTY/SKINCARE: Lakme, Maybelline, L'Oreal, Mamaearth, Dot & Key, The Ordinary, Minimalist, Plum, Biotique, Himalaya, Neutrogena, Olay, Nivea, Clinique, MAC, NYX, Faces Canada, Colorbar, Forest Essentials, Kama Ayurveda
   HAIRCARE: Dove, TRESemme, Pantene, Schwarzkopf, Streax, Livon, Matrix, L'Oreal Professionnel
   PERSONAL CARE: Gillette, Braun, Philips (grooming), Oral-B, Colgate, Sensodyne
-  HOME/KITCHEN: Prestige, Hawkins, Pigeon, Bosch, IFB, Morphy Richards, Milton, Cello, Tupperware
+  HOME/KITCHEN (accept at 40%+ off OR low absolute price — even "basic" items like cookware, toaster, kettle, mixer, cooker count): Prestige, Hawkins, Pigeon, Bergner, Wonderchef, Borosil, Butterfly, Milton, Cello, Tupperware, Bajaj, Philips, Morphy Richards, Bosch, IFB, Crompton, Usha, Havells, Faber, Glen, Preethi, Sujata, Inalsa, Agaro, Vidiem, Stovekraft, Greenchef, Nirlep, Amazon Brand (Solimo/Presto), Vasa, Kuvings
   FITNESS: Boldfit, Strauss, Nivia, Cosco, Decathlon
   WATCHES: Titan, Fastrack, Timex, Fossil, Casio, Seiko, Daniel Wellington
 
@@ -73,9 +73,19 @@ ACCEPT ALWAYS (any brand):
   - Flash/limited stock deals
   - International brand on Ajio/Myntra at any discount
 
+HOME/KITCHEN RULE (IMPORTANT — do not over-filter):
+  - A BRANDED kitchen/home appliance or cookware set at 40%+ off (or a clearly low price) IS shareable.
+    A 59%-off Bergner triply cookware set at ₹3,149, a Pigeon toaster at ₹398, a Prestige mixer at 50% off —
+    these are exactly what a home-making professional tells a friend about. ACCEPT them.
+  - Do NOT reject these as "basic" or "low shareability" just because the category is a toaster/cooker/cookware.
+    The BRAND + real DISCOUNT is what makes it shareable, not novelty.
+  - Only reject home/kitchen if it is UNBRANDED/no-name OR has a trivial discount (<40%) at a high price.
+
 REJECT:
   - Generic unbranded clothing (kurti/t-shirt/shirt/trousers) from unknown brands
+  - Generic UNBRANDED home/kitchen goods from no-name sellers
   - Generic personal care from unknown brands
+  - Credit-card / finance / loan / Bajaj Finserv EMI offers (not a product deal)
   - Obvious spam, no price, or price-only messages
   - Deals requiring 3+ steps to redeem (coupon + bank card + cashback stacking)
   - When price is unclear, LEAN TOWARD ACCEPTING
