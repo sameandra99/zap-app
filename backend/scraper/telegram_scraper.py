@@ -50,6 +50,7 @@ CHANNELS = [
     "urindianconsumer_official",     # Community-driven consumer deals
     "desidime",                      # India's largest deals community
     "icoolzTricks",                  # Electronics + multi-category deals
+    "Loot_Offers_Sale",              # General deals & offers
 ]
 
 POLL_INTERVAL   = 60   # seconds between full poll cycles
