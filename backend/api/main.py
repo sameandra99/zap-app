@@ -157,53 +157,62 @@ def load_push_tokens():
 
 @app.post("/notify")
 async def send_notification(data: dict):
-    """Send push notification via Firebase Cloud Messaging (production) or Expo (fallback)."""
+    """Send push notification — routes by token type:
+    - ExponentPushToken[...] → Expo push service
+    - Everything else (raw FCM token) → Firebase
+    """
     title = data.get("title", "⚡ Zap.")
     body = data.get("body", "")
 
     if not device_tokens:
         return {"status": "no_devices"}
 
-    # Try Firebase first (production)
-    if FIREBASE_ENABLED:
+    # Split tokens by type
+    expo_tokens = [t for t in device_tokens if t.startswith("ExponentPushToken[")]
+    fcm_tokens  = [t for t in device_tokens if not t.startswith("ExponentPushToken[")]
+
+    results = {"expo": 0, "fcm": 0}
+
+    # Send to Expo tokens via Expo push service
+    if expo_tokens:
+        import httpx as _httpx
+        messages = [
+            {"to": token, "title": title, "body": body, "sound": "default"}
+            for token in expo_tokens
+        ]
         try:
-            success_count = 0
-            for token in device_tokens:
-                try:
-                    message = messaging.Message(
-                        notification=messaging.Notification(title=title, body=body),
-                        token=token,
-                    )
-                    response = messaging.send(message)
-                    success_count += 1
-                except Exception as e:
-                    print(f"  ⚠️  FCM send to {token[:20]}... failed: {type(e).__name__}")
-
-            print(f"[PUSH-FCM] Sent to {success_count}/{len(device_tokens)} devices")
-            return {"status": "sent", "count": success_count, "via": "firebase"}
+            async with _httpx.AsyncClient(timeout=10) as client:
+                r = await client.post(
+                    "https://exp.host/--/api/v2/push/send",
+                    json=messages,
+                    headers={"Content-Type": "application/json", "Accept": "application/json"},
+                )
+            resp_data = r.json()
+            # Count successes (Expo returns per-message status)
+            if isinstance(resp_data.get("data"), list):
+                results["expo"] = sum(1 for d in resp_data["data"] if d.get("status") == "ok")
+            else:
+                results["expo"] = len(expo_tokens)
+            print(f"[PUSH-EXPO] Sent to {results['expo']}/{len(expo_tokens)} devices: {r.status_code}")
         except Exception as e:
-            print(f"[PUSH-FCM] Batch error: {type(e).__name__}: {str(e)[:100]}")
-            # Fall through to Expo fallback
+            print(f"[PUSH-EXPO] Error: {type(e).__name__}: {str(e)[:100]}")
 
-    # Fallback to Expo (if Firebase unavailable)
-    import httpx as _httpx
-    messages = [
-        {"to": token, "title": title, "body": body, "sound": "default"}
-        for token in device_tokens
-    ]
+    # Send to raw FCM tokens via Firebase
+    if fcm_tokens and FIREBASE_ENABLED:
+        for token in fcm_tokens:
+            try:
+                message = messaging.Message(
+                    notification=messaging.Notification(title=title, body=body),
+                    token=token,
+                )
+                messaging.send(message)
+                results["fcm"] += 1
+            except Exception as e:
+                print(f"  ⚠️  FCM send to {token[:20]}... failed: {type(e).__name__}")
+        print(f"[PUSH-FCM] Sent to {results['fcm']}/{len(fcm_tokens)} devices")
 
-    try:
-        async with _httpx.AsyncClient(timeout=10) as client:
-            r = await client.post(
-                "https://exp.host/--/api/v2/push/send",
-                json=messages,
-                headers={"Content-Type": "application/json"},
-            )
-        print(f"[PUSH-EXPO] Sent to {len(messages)} devices: {r.status_code}")
-        return {"status": "sent", "count": len(messages), "via": "expo"}
-    except Exception as e:
-        print(f"[PUSH] Error: {type(e).__name__}: {str(e)[:100]}")
-        return {"status": "error", "error": str(e)}
+    total = results["expo"] + results["fcm"]
+    return {"status": "sent", "count": total, "expo": results["expo"], "fcm": results["fcm"]}
 
 
 @app.post("/log")

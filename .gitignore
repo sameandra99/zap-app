@@ -4,9 +4,9 @@
 *.env
 firebase-service-account.json
 play-store-key.json
-google-services.json
 GoogleService-Info.plist
 *service-account*.json
+# google-services.json is safe to commit (Firebase project config only, no private keys)
 
 # Telegram session files
 *.session
