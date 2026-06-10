@@ -592,55 +592,101 @@ def canonicalize_url(url: str) -> str:
 _domain_cache = {"data": {}, "ts": 0.0, "table_ok": True}
 _DOMAIN_CACHE_TTL = 120  # seconds — admin approvals take effect within ~2 min
 
+# The in-code list is the AUTHORITATIVE baseline of approved trackers. The DB
+# table only ADDS new approvals or BLOCKS — it can never un-approve a baseline
+# domain. This keeps known trackers working even if the DB read is empty/RLS-
+# blocked/unavailable (the scraper uses the anon key, which RLS can restrict).
+def _in_baseline(host: str) -> bool:
+    return any(host == rd or host.endswith("." + rd) for rd in REDIRECT_DOMAINS)
 
-def _refresh_domain_cache(sb):
+
+# Dedicated service-key client for the redirect_domains table — bypasses RLS so
+# the scraper (anon key) can still read/write the registry reliably.
+_admin_sb = None
+def _get_admin_sb():
+    global _admin_sb
+    if _admin_sb is None:
+        try:
+            from supabase import create_client
+            key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ.get("SUPABASE_KEY")
+            _admin_sb = create_client(os.environ["SUPABASE_URL"], key)
+        except Exception:
+            _admin_sb = False  # mark as unavailable
+    return _admin_sb or None
+
+
+def _refresh_domain_cache():
     """Load redirect_domains statuses from DB into the in-memory cache."""
+    sb = _get_admin_sb()
+    if not sb:
+        _domain_cache["table_ok"] = False
+        return
     try:
         rows = sb.table("redirect_domains").select("domain,status").execute()
         _domain_cache["data"] = {r["domain"]: r["status"] for r in (rows.data or [])}
         _domain_cache["ts"] = time.monotonic()
         _domain_cache["table_ok"] = True
     except Exception as e:
-        # Table not created yet — fall back to legacy code list, never drop deals
         _domain_cache["table_ok"] = False
-        print(f"  ⚠️  redirect_domains table unavailable ({type(e).__name__}); using legacy list")
+        print(f"  ⚠️  redirect_domains table unavailable ({type(e).__name__}); using code baseline only")
 
 
 def domain_status(sb, host: str) -> str:
     """
     Return 'approved' | 'blocked' | 'pending' for a host.
-    Falls back to the legacy in-code REDIRECT_DOMAINS list if the DB table
-    doesn't exist yet (pre-migration) so the pipeline never hard-breaks.
+
+    Precedence:
+      1. Explicit DB entry (approved/blocked/pending) — admin decisions win
+      2. In-code baseline (REDIRECT_DOMAINS) → approved  (robust against RLS/empty DB)
+      3. Otherwise → pending (genuinely new domain, surface for admin approval)
     """
     if not host:
         return "pending"
     if time.monotonic() - _domain_cache["ts"] > _DOMAIN_CACHE_TTL:
-        _refresh_domain_cache(sb)
+        _refresh_domain_cache()
 
+    # 1. Explicit DB decision takes priority (lets admin BLOCK even baseline)
+    db_status = _domain_cache["data"].get(host)
+    if db_status in ("approved", "blocked", "pending"):
+        # ...but a baseline domain is never silently pending; treat as approved
+        if db_status == "pending" and _in_baseline(host):
+            return "approved"
+        return db_status
+
+    # 2. Code baseline → always approved (works even if DB read failed/empty)
+    if _in_baseline(host):
+        return "approved"
+
+    # 3. If the DB is unreachable we can't gate safely → don't lose deals,
+    #    pass through (old behaviour). Only gate when the registry is healthy.
     if not _domain_cache["table_ok"]:
-        # Legacy behaviour: code-list domains are approved, all else "approved"
-        # too (old default) — avoids dropping deals before migration is run.
-        legacy = any(host == rd or host.endswith("." + rd) for rd in REDIRECT_DOMAINS)
-        return "approved" if legacy else "approved"
+        return "approved"
 
-    return _domain_cache["data"].get(host, "pending")
+    # 4. Genuinely unknown domain, registry healthy → hold for approval
+    return "pending"
 
 
-def record_pending_domain(sb, host: str, sample_url: str):
-    """Upsert an unknown redirect domain as 'pending' so admin can approve it."""
+def record_pending_domain(sb, host: str, sample_url: str) -> bool:
+    """
+    Upsert an unknown redirect domain as 'pending' so admin can approve it.
+    Returns True if it was recorded (so the caller knows it's safe to hold the deal).
+    """
     if not host:
-        return
+        return False
+    client = _get_admin_sb()
+    if not client:
+        return False
     try:
         now_iso = datetime.now(timezone.utc).isoformat()
-        existing = sb.table("redirect_domains").select("domain,seen_count").eq("domain", host).execute()
+        existing = client.table("redirect_domains").select("domain,seen_count").eq("domain", host).execute()
         if existing.data:
-            sb.table("redirect_domains").update({
+            client.table("redirect_domains").update({
                 "seen_count": (existing.data[0].get("seen_count") or 0) + 1,
                 "last_seen": now_iso,
                 "sample_url": sample_url[:300],
             }).eq("domain", host).execute()
         else:
-            sb.table("redirect_domains").insert({
+            client.table("redirect_domains").insert({
                 "domain": host,
                 "status": "pending",
                 "sample_url": sample_url[:300],
@@ -650,8 +696,10 @@ def record_pending_domain(sb, host: str, sample_url: str):
             }).execute()
         _domain_cache["ts"] = 0.0  # bust cache so it reappears on next read
         print(f"  🕓 New redirect domain pending approval: {host}")
+        return True
     except Exception as e:
         print(f"  ⚠️  Could not record pending domain {host}: {type(e).__name__}")
+        return False
 
 
 # Known generic/junk images that must never be used as a product image.
@@ -1121,19 +1169,23 @@ async def process_message(
                 })
                 return
             if status == "pending":
-                # Unknown tracker — surface for admin approval, hold the deal back
-                record_pending_domain(sb, host, product_url)
-                print(f"  🕓 Holding deal — redirect domain pending approval: {host}")
-                _try_log(sb, {
-                    "raw_text": raw_text[:500], "llm_decision": result,
-                    "is_valid_deal": False,
-                    "filter_reason": f"Pending redirect-domain approval: {host}",
-                    "was_posted": False, "source_channel": source_channel,
-                    "timestamp_fetched": timestamp_fetched,
-                    "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
-                })
-                return
-            # approved → follow it to the destination
+                # Unknown tracker — surface for admin approval, but only HOLD the
+                # deal if we could actually record it (so it's approvable). If the
+                # registry write fails, pass through instead of losing the deal.
+                recorded = record_pending_domain(sb, host, product_url)
+                if recorded:
+                    print(f"  🕓 Holding deal — redirect domain pending approval: {host}")
+                    _try_log(sb, {
+                        "raw_text": raw_text[:500], "llm_decision": result,
+                        "is_valid_deal": False,
+                        "filter_reason": f"Pending redirect-domain approval: {host}",
+                        "was_posted": False, "source_channel": source_channel,
+                        "timestamp_fetched": timestamp_fetched,
+                        "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+                    })
+                    return
+                print(f"  ⚠️  Could not record {host}; passing through to avoid deal loss")
+            # approved (or unrecordable pending) → follow it to the destination
             resolved_url = await resolve_url(product_url)
 
         # 3. Canonicalize the destination into a clean, working product URL
