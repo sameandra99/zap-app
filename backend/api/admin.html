@@ -79,13 +79,11 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
 .raw-text-modal{max-height:200px;overflow-y:auto;padding:8px;border:1px solid #EEE;border-radius:6px;background:#F7F5F2;font-size:11px;white-space:pre-wrap;word-break:break-word;font-family:monospace}
 
 /* Link Ops Tab */
-.url-flow{display:flex;align-items:center;gap:8px;font-size:11px;font-family:monospace}
-.url-cell{background:#F0EDE8;padding:6px 8px;border-radius:4px;flex:1;min-width:150px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;word-break:break-all}
-.url-cell.short{background:#FEE2E2;color:#B91C1C}
+.url-cell{display:block;padding:4px 7px;border-radius:4px;font-size:11px;font-family:monospace;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;max-width:260px;cursor:pointer}
+.url-cell.raw{background:#F0EDE8;color:#78716C}
 .url-cell.affiliate{background:#DCFCE7;color:#15803D}
-.url-cell.direct{background:#E0F2FE;color:#0369A1}
-.url-arrow{color:#A8A29E;font-weight:700}
-.url-info{font-size:10px;color:#78716C;margin-top:4px}
+.url-cell.zap{background:#E0F2FE;color:#0369A1}
+.url-cell.empty{background:#F9F9F9;color:#C9B8B3;cursor:default}
 </style>
 </head>
 <body>
@@ -344,42 +342,38 @@ function renderLinkOps(q) {
         <th>Time</th>
         <th>Channel</th>
         <th>Platform</th>
-        <th>Short URL ↓</th>
-        <th>Affiliate URL ↓</th>
-        <th>Direct URL</th>
-        <th>Message</th>
+        <th>Copy</th>
+        <th>Raw URL <span style="font-weight:400;color:#A8A29E">(from message)</span></th>
+        <th>Affiliate URL <span style="font-weight:400;color:#A8A29E">(with tracking)</span></th>
+        <th>Zap Deal URL <span style="font-weight:400;color:#A8A29E">(clean)</span></th>
       </tr></thead>
       <tbody>
         ${items.map(op => {
           const timestamp = fmtTime(op.timestamp);
           const channel = op.channel || '—';
           const platform = op.platform || 'unknown';
+          const copy = op.copy || '—';
 
-          // Render short URL chain
-          const shortUrlsHtml = (op.short_urls || []).length
-            ? op.short_urls.map(u => `<div class="url-cell short" title="${esc(u)}">${esc(u.substring(0, 40))}</div>`).join('')
-            : '<div class="url-cell" style="background:#F0EDE8;color:#A8A29E">—</div>';
+          const rawHtml = (op.raw_urls || []).length
+            ? op.raw_urls.map(u => '<a href="' + esc(u) + '" target="_blank" class="url-cell raw" title="' + esc(u) + '">' + esc(u.substring(0, 45)) + '</a>').join('')
+            : '<span class="url-cell empty">—</span>';
 
-          // Render affiliate URL
           const affiliateHtml = op.affiliate_url
-            ? `<div class="url-cell affiliate" title="${esc(op.affiliate_url)}">${esc(op.affiliate_url.substring(0, 50))}</div>`
-            : '<div class="url-cell" style="background:#F0EDE8;color:#A8A29E">—</div>';
+            ? '<a href="' + esc(op.affiliate_url) + '" target="_blank" class="url-cell affiliate" title="' + esc(op.affiliate_url) + '">' + esc(op.affiliate_url.substring(0, 45)) + '</a>'
+            : '<span class="url-cell empty">—</span>';
 
-          // Render direct URLs
-          const directHtml = (op.direct_urls || []).length
-            ? op.direct_urls.map(u => `<div class="url-cell direct" title="${esc(u)}">${esc(u.substring(0, 50))}</div>`).join('')
-            : (op.short_urls || []).length ? '<span style="color:#78716C;font-size:10px">Resolved via affiliate</span>' : '<div class="url-cell" style="background:#F0EDE8;color:#A8A29E">—</div>';
-
-          const message = op.raw_message ? esc(op.raw_message) : '—';
+          const zapHtml = op.zap_deal_url
+            ? '<a href="' + esc(op.zap_deal_url) + '" target="_blank" class="url-cell zap" title="' + esc(op.zap_deal_url) + '">' + esc(op.zap_deal_url.substring(0, 45)) + '</a>'
+            : '<span class="url-cell empty">—</span>';
 
           return '<tr>'
             + '<td><span class="time-cell">' + timestamp + '</span></td>'
             + '<td><span class="channel">' + esc(channel) + '</span></td>'
             + '<td><span style="font-size:11px;font-weight:600">' + esc(platform) + '</span></td>'
-            + '<td>' + shortUrlsHtml + '</td>'
+            + '<td><div class="copy-text">' + esc(copy) + '</div></td>'
+            + '<td>' + rawHtml + '</td>'
             + '<td>' + affiliateHtml + '</td>'
-            + '<td>' + directHtml + '</td>'
-            + '<td><div class="copy-text">' + message + '</div></td>'
+            + '<td>' + zapHtml + '</td>'
             + '</tr>';
         }).join('')}
       </tbody>

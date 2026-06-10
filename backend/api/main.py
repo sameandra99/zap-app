@@ -530,51 +530,43 @@ def get_overrides(limit: int = 20):
 
 @app.get("/admin/link-ops")
 def get_link_operations(limit: int = 100):
-    """URL transformation tracking — shows short URL > affiliate URL > clean URL flow."""
-    from pipeline.deal_pipeline import (
-        extract_urls_from_text, is_redirect_domain, REDIRECT_DOMAINS
-    )
-    import re
+    """
+    URL transformation tracking — three-column view:
+      Raw URL     = original URL(s) extracted from the Telegram message
+      Affiliate URL = final URL stored in DB (with ?tag=, utm_ etc.)
+      Zap Deal URL  = clean product URL with all tracking params stripped
+    """
+    from pipeline.deal_pipeline import extract_urls_from_text, strip_affiliate_params
 
     db = get_db_admin()
     try:
-        # Get recent logs with raw text (to extract original URLs)
         result = db.table("pipeline_logs").select(
-            "id, raw_text, affiliate_url, platform, timestamp_fetched, source_channel"
+            "id, raw_text, affiliate_url, platform, timestamp_fetched, source_channel, copy"
         ).order("timestamp_fetched", desc=True).limit(limit).execute()
 
         ops = []
         for log in result.data or []:
-            raw_text = log.get("raw_text", "")
-            affiliate_url = log.get("affiliate_url", "")
-            platform = log.get("platform", "")
+            raw_text    = log.get("raw_text", "")
+            affiliate_url = log.get("affiliate_url", "") or ""
+            platform    = log.get("platform", "")
+            copy        = log.get("copy", "")
 
-            # Extract all URLs from raw message
-            extracted = extract_urls_from_text(raw_text)
+            # All URLs from the original Telegram message (raw input)
+            raw_urls = extract_urls_from_text(raw_text)
 
-            # Categorize URLs
-            short_urls = []
-            direct_urls = []
+            # Clean product URL — affiliate URL with tracking params stripped
+            zap_deal_url = strip_affiliate_params(affiliate_url) if affiliate_url else ""
 
-            for url in extracted:
-                if is_redirect_domain(url):
-                    short_urls.append(url)
-                else:
-                    direct_urls.append(url)
-
-            # Only include entries that have URL transformations
-            if short_urls or affiliate_url:
-                ops.append({
-                    "id": log.get("id"),
-                    "timestamp": log.get("timestamp_fetched"),
-                    "channel": log.get("source_channel", ""),
-                    "platform": platform,
-                    "short_urls": short_urls,          # Original short/redirect URLs
-                    "direct_urls": direct_urls,        # Direct ecommerce URLs
-                    "affiliate_url": affiliate_url,    # Final URL stored in DB (with tracking)
-                    "raw_message": raw_text[:150] if raw_text else "",
-                    "redirect_domains": [d for d in short_urls if any(d.count(rd) for rd in REDIRECT_DOMAINS)],
-                })
+            ops.append({
+                "id":           log.get("id"),
+                "timestamp":    log.get("timestamp_fetched"),
+                "channel":      log.get("source_channel", ""),
+                "platform":     platform,
+                "copy":         copy[:60] if copy else "",
+                "raw_urls":     raw_urls[:3],       # up to 3 original URLs from message
+                "affiliate_url": affiliate_url,     # stored URL with tracking
+                "zap_deal_url": zap_deal_url,       # clean URL, no tracking params
+            })
 
         return {"operations": ops, "count": len(ops)}
     except Exception as e:
