@@ -1,0 +1,29 @@
+{
+  "name": "loot-app-v2",
+  "version": "1.0.0",
+  "main": "index.js",
+  "scripts": {
+    "start": "expo start",
+    "android": "expo start --android",
+    "ios": "expo start --ios",
+    "web": "expo start --web"
+  },
+  "dependencies": {
+    "@react-native-async-storage/async-storage": "2.2.0",
+    "@react-native-firebase/analytics": "^24.1.0",
+    "@react-native-firebase/app": "^24.1.0",
+    "expo": "~54.0.0",
+    "expo-asset": "~12.0.13",
+    "expo-constants": "~18.0.13",
+    "expo-linking": "~8.0.12",
+    "expo-notifications": "~0.32.17",
+    "expo-status-bar": "~3.0.9",
+    "react": "19.1.0",
+    "react-native": "0.81.5"
+  },
+  "devDependencies": {
+    "@babel/core": "^7.20.0",
+    "eas-cli": "^20.1.0"
+  },
+  "private": true
+}

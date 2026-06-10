@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "873349410869",
+    "project_id": "zap-deals",
+    "storage_bucket": "zap-deals.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:873349410869:android:228cc3dd320131e0c7c17c",
+        "android_client_info": {
+          "package_name": "com.zapdeals.app"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyDM9JWVG96lrq0Z2IwyCgtFaRW-r7t6QgA"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}
