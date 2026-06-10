@@ -4,131 +4,36 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1"/>
 <title>Loot.</title>
-<link href="https://fonts.googleapis.com/css2?family=Poppins:wght@700;800&family=Roboto:wght@400;500;700&display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
 <style>
-:root {
-  --bg:      #F7F4EF;   /* warm cream — not clinical grey */
-  --surface: #FFFFFF;
-  --text:    #1C1917;   /* warm black */
-  --text-2:  #78716C;   /* warm mid */
-  --text-3:  #A8A29E;   /* warm light */
-  --accent:  #C2410C;   /* deep burnt orange — ownable, energetic */
-  --btn:     #1C1917;
-  --muted:   #F0EDE8;
-  --sp1: 8px; --sp2: 16px;
-}
-
-*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body {
-  background: #1C1C1E;
-  font-family: 'Roboto', -apple-system, sans-serif;
-  display: flex; justify-content: center;
-  padding: 20px 12px 40px; min-height: 100vh;
-  -webkit-font-smoothing: antialiased;
-}
-.phone {
-  width: 393px; background: var(--bg);
-  border-radius: 50px; overflow: hidden;
-  box-shadow: 0 40px 80px rgba(0,0,0,0.55);
-}
-.island { width: 120px; height: 34px; background: #111; border-radius: 0 0 22px 22px; margin: 0 auto; }
-.status { display: flex; justify-content: space-between; padding: 8px 26px 0; font-size: 12px; font-weight: 500; color: var(--text-2); }
-
-.scroll { height: 808px; overflow-y: auto; padding-bottom: var(--sp2); scrollbar-width: none; }
-.scroll::-webkit-scrollbar { display: none; }
-
-/* ── HEADER ── */
-.header {
-  padding: var(--sp2) var(--sp2) 12px;
-  background: var(--bg);
-  position: sticky; top: 0; z-index: 10;
-}
-.header-row { display: flex; align-items: center; justify-content: space-between; }
-.brand {
-  font-family: 'Poppins', sans-serif;
-  font-size: 24px; font-weight: 800;
-  letter-spacing: -0.04em; color: var(--text);
-}
-.brand em { color: var(--accent); font-style: normal; }
-.notif {
-  width: 40px; height: 40px; background: var(--surface);
-  border-radius: 12px; border: none;
-  display: flex; align-items: center; justify-content: center;
-  font-size: 17px; cursor: pointer; position: relative;
-  box-shadow: 0 1px 4px rgba(0,0,0,0.08);
-}
-.notif-pip { position: absolute; top: 8px; right: 8px; width: 6px; height: 6px; background: var(--accent); border-radius: 50%; border: 1.5px solid var(--bg); }
-.header-sub { font-size: 12px; color: var(--text-3); margin-top: 3px; }
-
-/* ── CARD ── */
-.card {
-  background: var(--surface);
-  border-radius: 16px;
-  margin: 0 var(--sp2) var(--sp1);
-  padding: 12px;
-  box-shadow: 0 1px 3px rgba(0,0,0,0.06), 0 4px 14px rgba(0,0,0,0.04);
-  display: flex; gap: 10px; align-items: flex-start;
-}
-.card:first-of-type { margin-top: var(--sp1); }
-
-/* image */
-.img {
-  flex-shrink: 0; width: 60px; height: 60px;
-  border-radius: 10px; overflow: hidden;
-  background: var(--muted);
-}
-.img img { width: 100%; height: 100%; object-fit: cover; display: block; }
-
-/* body */
-.body { flex: 1; min-width: 0; display: flex; flex-direction: column; gap: 4px; }
-
-/* copy — the hero */
-.copy {
-  font-size: 13.5px; line-height: 1.5;
-  color: var(--text); font-weight: 400;
-}
-.copy b { font-weight: 700; }
-
-/* footer: platform + clicks on left, actions on right */
-.footer {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: var(--sp1);
-}
-.footer-left { display: flex; align-items: center; gap: 6px; }
-.platform { font-size: 11px; color: var(--text-3); font-weight: 500; }
-.sep { font-size: 8px; color: var(--text-3); }
-.clicks { font-size: 11px; color: var(--text-3); font-weight: 500; display: flex; align-items: center; gap: 3px; }
-
-/* actions — compact, proportional to the deal */
-.actions { display: flex; align-items: center; gap: 5px; flex-shrink: 0; }
-
-.btn-buy {
-  height: 28px; padding: 0 12px;
-  /* visual: 28px — tap area extended via parent gap */
-  background: var(--btn); color: #fff;
-  border: none; border-radius: 50px;
-  font-size: 11.5px; font-weight: 700;
-  font-family: 'Roboto', sans-serif; cursor: pointer;
-  display: flex; align-items: center; gap: 4px;
-  transition: background 0.15s;
-  white-space: nowrap;
-}
-.btn-buy:hover { background: #292524; }
-.btn-buy:active { transform: scale(0.97); }
-.btn-buy:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-
-.btn-share {
-  height: 28px; width: 28px;
-  background: var(--muted); border: none;
-  border-radius: 50%; cursor: pointer;
-  display: flex; align-items: center; justify-content: center;
-  color: var(--text-2);
-  transition: background 0.15s;
-  flex-shrink: 0;
-}
-.btn-share:hover { background: #E7E3DC; }
-.btn-share:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
-.btn-share svg { display: block; }
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{background:#111;font-family:'Inter',-apple-system,sans-serif;display:flex;justify-content:center;padding:20px 12px 40px;min-height:100vh;-webkit-font-smoothing:antialiased}
+.phone{width:393px;background:#F7F5F2;border-radius:50px;overflow:hidden;box-shadow:0 40px 80px rgba(0,0,0,.55)}
+.island{width:120px;height:34px;background:#111;border-radius:0 0 22px 22px;margin:0 auto}
+.status{display:flex;justify-content:space-between;padding:8px 26px 0;font-size:12px;font-weight:500;color:#555}
+.scroll{height:808px;overflow-y:auto;scrollbar-width:none}
+.scroll::-webkit-scrollbar{display:none}
+.header{padding:18px 20px 14px;display:flex;align-items:center;justify-content:space-between}
+.title{font-size:20px;font-weight:800;color:#1C1917;letter-spacing:-0.3px}
+.search-wrap{position:relative;width:40px;height:40px;display:flex;align-items:center;justify-content:center;font-size:20px;cursor:pointer}
+.badge{position:absolute;top:0;right:0;background:#2ECC71;border-radius:10px;padding:1px 5px;min-width:22px;text-align:center;font-size:9px;font-weight:800;color:#fff}
+.filters{display:flex;gap:8px;padding:0 16px 14px;overflow-x:auto;scrollbar-width:none}
+.filters::-webkit-scrollbar{display:none}
+.pill{padding:8px 18px;border-radius:50px;background:#EEEBE6;font-size:13px;font-weight:600;color:#78716C;cursor:pointer;white-space:nowrap;border:none;font-family:'Inter',sans-serif;transition:all .15s}
+.pill.active{background:#1C1917;color:#fff}
+.card{background:#fff;border-radius:16px;margin:0 16px 10px;display:flex;overflow:hidden;box-shadow:0 1px 4px rgba(0,0,0,.06),0 4px 14px rgba(0,0,0,.04)}
+.card-img{width:130px;height:130px;flex-shrink:0;background:#F5F3EF;overflow:hidden;position:relative;display:flex;align-items:center;justify-content:center;align-self:flex-start}
+.card-img img{width:100%;height:100%;object-fit:cover;object-position:top left;display:block}
+.placeholder{font-size:32px}
+.card-body{flex:1;padding:14px;display:flex;flex-direction:column;gap:6px}
+.copy{font-size:13.5px;line-height:1.5;color:#1C1917;font-weight:500;flex:1}
+.clicks{font-size:11px;color:#A8A29E;font-weight:500}
+.actions{display:flex;align-items:center;justify-content:space-between;margin-top:4px}
+.offer-btn{background:#F5F3EF;border:none;border-radius:50px;padding:8px 16px;font-size:12.5px;font-weight:600;color:#1C1917;font-family:'Inter',sans-serif;cursor:pointer}
+.offer-btn:hover{background:#EAE7E2}
+.bookmark{font-size:16px;opacity:.35;cursor:pointer;background:none;border:none;padding:4px}
+.loading{text-align:center;padding:60px 20px;color:#A8A29E;font-size:14px}
+.empty{text-align:center;padding:60px 20px;color:#A8A29E;font-size:14px}
 </style>
 </head>
 <body>
@@ -137,52 +42,92 @@ body {
   <div class="status"><span>9:41</span><span>●●● 5G</span></div>
   <div class="scroll">
     <div class="header">
-      <div class="header-row">
-        <span class="brand">Loot<em>.</em></span>
-        <button class="notif" aria-label="Notifications">🔔<div class="notif-pip"></div></button>
-      </div>
-      <div class="header-sub">Fresh deals, right now</div>
+      <span class="title">Fresh deals, right now 🔥</span>
+      <div class="search-wrap">🔍<div class="badge" id="badge" style="display:none"></div></div>
     </div>
-    <div id="list"></div>
+    <div class="filters">
+      <button class="pill active" onclick="filter(this,'all')">All</button>
+      <button class="pill" onclick="filter(this,'fashion')">Fashion</button>
+      <button class="pill" onclick="filter(this,'electronics')">Electronics</button>
+      <button class="pill" onclick="filter(this,'footwear')">Footwear</button>
+      <button class="pill" onclick="filter(this,'under999')">Under ₹999</button>
+    </div>
+    <div id="list"><div class="loading">Loading deals...</div></div>
   </div>
 </div>
 
 <script>
-const deals = [
-  { id:1, copy:"Blinkit Loot: Apple AirTag for <b>₹1,804</b> (Effectively). Add to cart for 10% discount.", platform:"Blinkit", clicks:"2.4k", image:"https://images.unsplash.com/photo-1612872087720-bb876e2e67d1?w=200&h=200&fit=crop" },
-  { id:2, copy:"Lowest: Halonix 12W LED Bulb (Pack of 2) at <b>₹149</b>.", platform:"Amazon", clicks:"1.1k", image:"https://images.unsplash.com/photo-1565814329452-e1efa11c5b89?w=200&h=200&fit=crop" },
-  { id:3, copy:"Zepto Loot: Ambrane MagSafe 10000mAh Powerbank with Stand for <b>₹599</b> with SBI Visa Card.", platform:"Zepto", clicks:"987", image:"https://images.unsplash.com/photo-1609091839311-d5365f9ff1c5?w=200&h=200&fit=crop" },
-  { id:4, copy:"GRAB: AGARO & WOSCHER Car Pressure Washers from <b>₹3,799</b>. Heavy duty, free delivery.", platform:"Amazon", clicks:"763", image:"https://images.unsplash.com/photo-1558618666-fcd25c85cd64?w=200&h=200&fit=crop" },
-  { id:5, copy:"Timex watches up to <b>60% off</b>. Use code <b>TIME2SAVE</b> for extra 10% at checkout.", platform:"Myntra", clicks:"3.1k", image:"https://images.unsplash.com/photo-1524592094714-0f0654e20314?w=200&h=200&fit=crop" },
-  { id:6, copy:"Loot: boAt Airdopes 141 for <b>₹764</b> effectively with HDFC card (was ₹2,990).", platform:"Flipkart", clicks:"5.2k", image:"https://images.unsplash.com/photo-1590658268037-6bf12165a8df?w=200&h=200&fit=crop" },
-  { id:7, copy:"Lowest: MacBook Air M4 13\" at <b>₹72,900</b> (was ₹1,14,900). Code <b>HDFC5K</b> for ₹5K more off.", platform:"Amazon", clicks:"4.8k", image:"https://images.unsplash.com/photo-1517336714731-489689fd1ca8?w=200&h=200&fit=crop" },
-];
+const API = 'https://loot-api.fly.dev';
+let allDeals = [];
+let active = 'all';
 
-const shareIcon = `<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M4 12v8a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-8"/><polyline points="16 6 12 2 8 6"/><line x1="12" y1="2" x2="12" y2="15"/></svg>`;
+const FASHION_PLATFORMS = ['myntra','ajio','meesho','nykaa'];
+const ELECTRONICS_PLATFORMS = ['amazon','flipkart','zepto','blinkit'];
 
-document.getElementById('list').innerHTML = deals.map(d => `
-  <div class="card" role="article">
-    <div class="img"><img src="${d.image}" loading="lazy" alt=""/></div>
-    <div class="body">
-      <div class="copy">${d.copy}</div>
-      <div class="footer">
-        <div class="footer-left">
-          <span class="clicks">${d.clicks} clicks</span>
-        </div>
+async function loadDeals() {
+  try {
+    const res = await fetch(API + '/deals');
+    const data = await res.json();
+    allDeals = data.deals || [];
+    const badge = document.getElementById('badge');
+    badge.style.display = 'block';
+    badge.textContent = allDeals.length + '+';
+    render();
+  } catch(e) {
+    document.getElementById('list').innerHTML = '<div class="loading">Could not load deals.</div>';
+  }
+}
+
+function filter(el, cat) {
+  document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+  el.classList.add('active');
+  active = cat;
+  render();
+}
+
+function render() {
+  const filtered = allDeals.filter(d => {
+    if (active === 'all') return true;
+    if (active === 'under999') {
+      const p = (d.deal_price || '').replace(/[^\d]/g,'');
+      return p && parseInt(p) < 999;
+    }
+    if (active === 'fashion') return FASHION_PLATFORMS.includes(d.platform);
+    if (active === 'electronics') return ELECTRONICS_PLATFORMS.includes(d.platform);
+    if (active === 'footwear') return ['myntra','ajio'].includes(d.platform);
+    return true;
+  });
+
+  if (!filtered.length) {
+    document.getElementById('list').innerHTML = '<div class="empty">No deals here yet.</div>';
+    return;
+  }
+
+  const clicks = n => n >= 1000 ? (n/1000).toFixed(1)+'K' : n;
+
+  document.getElementById('list').innerHTML = filtered.map(d => `
+    <div class="card" onclick="window.open('${d.affiliate_url || '#'}','_blank')">
+      <div class="card-img">
+        ${d.image_url
+          ? `<img src="${d.image_url}" loading="lazy"/>`
+          : `<span class="placeholder">🛍</span>`}
+      </div>
+      <div class="card-body">
+        <div class="copy">${escHtml(d.copy)}</div>
+        <div class="clicks">${clicks(d.clicks || 0)} clicks</div>
         <div class="actions">
-          <button class="btn-buy" onclick="buy(${d.id})">${d.platform} →</button>
-          <button class="btn-share" onclick="share(${d.id})" aria-label="Share">${shareIcon}</button>
+          <button class="offer-btn">View Offer →</button>
+          <button class="bookmark" onclick="event.stopPropagation()">🔖</button>
         </div>
       </div>
-    </div>
-  </div>`).join('');
-
-function buy(id) {}
-function share(id) {
-  const d = deals.find(x => x.id === id);
-  const text = d.copy.replace(/<[^>]+>/g, '');
-  navigator.share?.({ title: text, url: window.location.href }) || navigator.clipboard?.writeText(text);
+    </div>`).join('');
 }
+
+function escHtml(s) {
+  return (s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+loadDeals();
 </script>
 </body>
 </html>

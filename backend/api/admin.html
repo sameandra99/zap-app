@@ -4,6 +4,7 @@
 <meta charset="UTF-8"/>
 <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
 <title>Zap. — Pipeline Monitor</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='90' fill='%23E8571A'>⚡</text></svg>"/>
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
 body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F7F5F2;color:#1C1917;-webkit-font-smoothing:antialiased}
@@ -22,6 +23,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .tab.active-all{background:#1C1917;color:#fff}
 .tab.active-posted{background:#16A34A;color:#fff}
 .tab.active-filtered{background:#DC2626;color:#fff}
+.tab.active-linkops{background:#0369A1;color:#fff}
 .tab:not(.active-all):not(.active-posted):not(.active-filtered){background:#F0EDE8;color:#78716C}
 .toolbar{display:flex;align-items:center;gap:8px;padding:12px 20px;background:#fff}
 .toolbar input{flex:1;padding:7px 12px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit}
@@ -30,30 +32,34 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .table-wrap{overflow-x:auto;padding:0 20px 24px}
 table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:12px}
 th{background:#F5F3EF;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#78716C;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #EEE;white-space:nowrap}
-td{padding:10px 12px;font-size:12px;border-bottom:1px solid #F5F3EF;vertical-align:top}
+td{padding:6px 10px;font-size:12px;border-bottom:1px solid #F5F3EF;vertical-align:middle}
 tr:last-child td{border-bottom:none}
-tr:hover td{background:#FAFAF8}
-.badge{display:inline-flex;align-items:center;gap:3px;padding:2px 8px;border-radius:50px;font-size:10px;font-weight:700}
-.badge.posted{background:#DCFCE7;color:#15803D}
+tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
+.badge{display:inline-block;padding:3px 6px;border-radius:6px;font-size:10px;font-weight:700;text-align:center;line-height:1.1;white-space:normal}
+.badge.auto-posted{background:#DCFCE7;color:#15803D}
 .badge.filtered{background:#FEE2E2;color:#B91C1C}
-.badge.approved{background:#E0F2FE;color:#0369A1}
-.channel{font-size:11px;background:#F0EDE8;padding:2px 7px;border-radius:4px;color:#78716C;font-weight:500;white-space:nowrap}
-.raw-text{max-width:300px;max-height:40px;overflow:hidden;color:#78716C;font-size:11px;cursor:pointer;line-height:1.4;word-break:break-word}
-.raw-text:hover{color:#1C1917;background:#F0EDE8;padding:2px 4px}
-.copy-text{max-width:220px;font-size:12px;color:#1C1917;font-weight:500;line-height:1.3}
-.reason{font-size:11px;color:#B91C1C;max-width:160px;line-height:1.3}
+.badge.admin-approved{background:#E0F2FE;color:#0369A1}
+.channel{font-size:11px;background:#F0EDE8;padding:3px 8px;border-radius:4px;color:#78716C;font-weight:500;white-space:nowrap;display:inline-block}
+.raw-text{min-width:200px;max-width:400px;max-height:40px;overflow:hidden;color:#78716C;font-size:11px;cursor:pointer;line-height:1.3;word-break:break-word;text-align:left}
+.raw-text:hover{color:#1C1917}
+.raw-text.empty{cursor:default;color:#C9B8B3}
+.copy-text{min-width:180px;max-width:280px;font-size:12px;color:#1C1917;font-weight:500;line-height:1.3;text-align:left;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
+.reason{min-width:140px;max-width:200px;font-size:12px;color:#B91C1C;line-height:1.3;text-align:left;overflow:hidden;text-overflow:ellipsis;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical}
 .img-thumb{width:40px;height:40px;object-fit:cover;border-radius:4px;background:#F0EDE8}
 .img-placeholder{width:40px;height:40px;border-radius:4px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:16px}
 .img-cell{text-align:center}
 .img-source{font-size:9px;color:#A8A29E;margin-top:2px;text-align:center;font-weight:500}
 .time-cell{font-size:11px;color:#A8A29E;white-space:nowrap}
+.cta-link{font-size:12px;font-weight:600;color:#fff;text-decoration:none;padding:4px 8px;border-radius:4px;background:#0369A1;display:inline-block;white-space:nowrap}
+.cta-link:hover{background:#0284C7}
+.cta-empty{font-size:11px;color:#C9B8B3}
 .actions{display:flex;gap:4px;white-space:nowrap}
-.btn-approve{padding:4px 8px;border-radius:4px;background:#DCFCE7;color:#15803D;border:none;font-size:11px;font-weight:700;cursor:pointer}
+.btn-approve{padding:4px 10px;border-radius:4px;background:#DCFCE7;color:#15803D;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s ease}
 .btn-approve:hover{background:#BBF7D0}
-.btn-remove{padding:4px 8px;border-radius:4px;background:#FEE2E2;color:#B91C1C;border:none;font-size:11px;font-weight:700;cursor:pointer}
-.btn-remove:hover{background:#FECACA}
-.btn-edit{padding:4px 8px;border-radius:4px;background:#E0F2FE;color:#0369A1;border:none;font-size:11px;font-weight:700;cursor:pointer}
+.btn-edit{padding:4px 10px;border-radius:4px;background:#E0F2FE;color:#0369A1;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s ease}
 .btn-edit:hover{background:#BAE6FD}
+.btn-remove{padding:4px 10px;border-radius:4px;background:#FEE2E2;color:#B91C1C;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s ease}
+.btn-remove:hover{background:#FECACA}
 .empty{text-align:center;padding:40px;color:#A8A29E}
 
 /* Modal */
@@ -71,6 +77,15 @@ tr:hover td{background:#FAFAF8}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1C1917;color:#fff;padding:10px 20px;border-radius:50px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
 .toast.show{opacity:1}
 .raw-text-modal{max-height:200px;overflow-y:auto;padding:8px;border:1px solid #EEE;border-radius:6px;background:#F7F5F2;font-size:11px;white-space:pre-wrap;word-break:break-word;font-family:monospace}
+
+/* Link Ops Tab */
+.url-flow{display:flex;align-items:center;gap:8px;font-size:11px;font-family:monospace}
+.url-cell{background:#F0EDE8;padding:6px 8px;border-radius:4px;flex:1;min-width:150px;max-width:250px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;word-break:break-all}
+.url-cell.short{background:#FEE2E2;color:#B91C1C}
+.url-cell.affiliate{background:#DCFCE7;color:#15803D}
+.url-cell.direct{background:#E0F2FE;color:#0369A1}
+.url-arrow{color:#A8A29E;font-weight:700}
+.url-info{font-size:10px;color:#78716C;margin-top:4px}
 </style>
 </head>
 <body>
@@ -92,6 +107,7 @@ tr:hover td{background:#FAFAF8}
   <button class="tab active-all" onclick="setTab('all',this)">All</button>
   <button class="tab" onclick="setTab('posted',this)">✅ Posted</button>
   <button class="tab" onclick="setTab('filtered',this)">❌ Filtered</button>
+  <button class="tab" onclick="setTab('linkops',this)">🔗 Link Ops</button>
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="Search deals, channels, reasons..." oninput="render()"/>
@@ -133,15 +149,18 @@ tr:hover td{background:#FAFAF8}
 let activeTab = 'all';
 let allLogs = [];
 let allDeals = [];
+let allLinkOps = [];
 
 async function load() {
   document.getElementById('content').innerHTML = '<div class="empty">Loading...</div>';
-  const [logsRes, dealsRes] = await Promise.all([
-    fetch('/admin/logs?limit=200').then(r=>r.json()).catch(()=>({logs:[]})),
-    fetch('/admin/deals').then(r=>r.json()).catch(()=>({deals:[]})),
+  const [logsRes, dealsRes, linkOpsRes] = await Promise.all([
+    fetch('/admin/logs?limit=300').then(r=>r.json()).catch(()=>({logs:[]})),  // Live logs only
+    fetch('/admin/deals?limit=300').then(r=>r.json()).catch(()=>({deals:[]})),
+    fetch('/admin/link-ops?limit=300').then(r=>r.json()).catch(()=>({operations:[]})),
   ]);
   allLogs = logsRes.logs || [];
   allDeals = dealsRes.deals || [];
+  allLinkOps = linkOpsRes.operations || [];
 
   const today = new Date().toISOString().split('T')[0];
   const todayDeals = allDeals.filter(d => d.created_at?.startsWith(today));
@@ -183,6 +202,12 @@ function getImageSource(raw, imageUrl) {
 
 function render() {
   const q = (document.getElementById('search')?.value || '').toLowerCase();
+
+  // Special case for Link Ops tab
+  if (activeTab === 'linkops') {
+    return renderLinkOps(q);
+  }
+
   let items = [];
 
   if (activeTab === 'posted') {
@@ -210,6 +235,13 @@ function render() {
     );
   }
 
+  // Sort by message time (newest first) regardless of status
+  items.sort((a, b) => {
+    const aTime = new Date(a.timestamp_fetched || a.created_at || 0);
+    const bTime = new Date(b.timestamp_fetched || b.created_at || 0);
+    return bTime - aTime; // Descending (newest first)
+  });
+
   if (!items.length) {
     document.getElementById('content').innerHTML = '<div class="empty">No results.</div>';
     return;
@@ -218,14 +250,16 @@ function render() {
   document.getElementById('content').innerHTML = `
     <table>
       <thead><tr>
-        <th>Status</th>
-        <th>Channel</th>
-        <th>Image</th>
-        <th>Raw Message</th>
-        <th>Copy / Reason</th>
+        <th>Approval</th>
         <th>Msg Time</th>
-        <th>Posted</th>
+        <th>Raw Message</th>
+        <th>Channel</th>
+        <th>Copy</th>
+        <th>Reason</th>
+        <th>CTA</th>
+        <th>Image</th>
         <th>Src</th>
+        <th>Posted</th>
         <th>Actions</th>
       </tr></thead>
       <tbody>
@@ -244,39 +278,164 @@ function render() {
           const platform = l.llm_decision?.platform || l.platform || '';
           const url = l.llm_decision?.url || l.affiliate_url || '';
 
-          const badge = isApproved ? `<span class="badge approved">✔</span>`
-            : isPosted ? `<span class="badge posted">✅</span>`
-            : `<span class="badge filtered">❌</span>`;
-
           const imgCell = imgUrl
             ? `<div class="img-cell"><img class="img-thumb" src="${esc(imgUrl)}" onerror="this.style.display='none'"/></div>`
             : `<div class="img-cell"><div class="img-placeholder">🛍</div></div>`;
 
           const actions = isPosted || isApproved
             ? `<div class="actions">
-                <button class="btn-edit" onclick="openEdit('${esc(dealId)}', -1, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✏️</button>
-                <button class="btn-remove" onclick="removeDeal('${esc(dealId)}')">🗑</button>
+                <button class="btn-edit" onclick="openEdit('${esc(dealId)}', -1, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✏️ Edit</button>
+                <button class="btn-remove" onclick="removeDeal('${esc(dealId)}')">🗑 Remove</button>
                </div>`
             : `<div class="actions">
-                <button class="btn-approve" onclick="openEdit('', ${i}, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✅</button>
+                <button class="btn-approve" onclick="generateAndApprove(${i}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✓ Approve Deal</button>
                </div>`;
+
+          const badge = isApproved
+            ? `<span class="badge admin-approved">✔ Admin<br/>Approved</span>`
+            : isPosted
+            ? `<span class="badge auto-posted">✅ Auto<br/>Posted</span>`
+            : `<span class="badge filtered">❌ Filtered</span>`;
+
+          const ctaBtn = url
+            ? `<a href="${esc(url)}" target="_blank" class="cta-link">${esc(platform || 'Link')} →</a>`
+            : `<span class="cta-empty">—</span>`;
 
           return `<tr>
             <td>${badge}</td>
-            <td><span class="channel">${esc(ch)}</span></td>
-            <td>${imgCell}</td>
-            <td><div class="raw-text" title="${esc(raw)}" onclick="showRaw('${esc(raw).replace(/'/g,"\\'")}')">${esc(raw).substring(0,80)}</div></td>
-            <td>${isPosted || isApproved
-              ? `<div class="copy-text">${esc(copy.substring(0,80))}</div>`
-              : `<div class="reason">${esc(reason.substring(0,60))}</div>`}</td>
             <td><span class="time-cell">${msgTime}</span></td>
-            <td><span class="time-cell">${postedTime}</span></td>
+            <td><div class="raw-text${!raw ? ' empty' : ''}" ${raw ? `title="${esc(raw)}" onclick="showRaw('${esc(raw).replace(/'/g,"\\'")}')"` : ''}>${raw ? esc(raw).substring(0,80) : '—'}</div></td>
+            <td><span class="channel">${esc(ch)}</span></td>
+            <td><div class="copy-text">${copy ? esc(copy.substring(0,80)) : '—'}</div></td>
+            <td><div class="reason">${reason ? esc(reason.substring(0,80)) : '—'}</div></td>
+            <td>${ctaBtn}</td>
+            <td>${imgCell}</td>
             <td><span class="time-cell">${imgSrc}</span></td>
+            <td><span class="time-cell">${postedTime}</span></td>
             <td>${actions}</td>
           </tr>`;
         }).join('')}
       </tbody>
     </table>`;
+}
+
+function renderLinkOps(q) {
+  let items = allLinkOps;
+
+  // Filter by search query
+  if (q) {
+    items = items.filter(op =>
+      (op.short_urls || []).some(u => u.includes(q)) ||
+      (op.direct_urls || []).some(u => u.includes(q)) ||
+      (op.affiliate_url || '').includes(q) ||
+      (op.channel || '').toLowerCase().includes(q) ||
+      (op.platform || '').toLowerCase().includes(q)
+    );
+  }
+
+  if (!items.length) {
+    document.getElementById('content').innerHTML = '<div class="empty">No URL transformations found.</div>';
+    return;
+  }
+
+  document.getElementById('content').innerHTML = `
+    <table>
+      <thead><tr>
+        <th>Time</th>
+        <th>Channel</th>
+        <th>Platform</th>
+        <th>Short URL ↓</th>
+        <th>Affiliate URL ↓</th>
+        <th>Direct URL</th>
+        <th>Message</th>
+      </tr></thead>
+      <tbody>
+        ${items.map(op => {
+          const timestamp = fmtTime(op.timestamp);
+          const channel = op.channel || '—';
+          const platform = op.platform || 'unknown';
+
+          // Render short URL chain
+          const shortUrlsHtml = (op.short_urls || []).length
+            ? op.short_urls.map(u => `<div class="url-cell short" title="${esc(u)}">${esc(u.substring(0, 40))}</div>`).join('')
+            : '<div class="url-cell" style="background:#F0EDE8;color:#A8A29E">—</div>';
+
+          // Render affiliate URL
+          const affiliateHtml = op.affiliate_url
+            ? `<div class="url-cell affiliate" title="${esc(op.affiliate_url)}">${esc(op.affiliate_url.substring(0, 50))}</div>`
+            : '<div class="url-cell" style="background:#F0EDE8;color:#A8A29E">—</div>';
+
+          // Render direct URLs
+          const directHtml = (op.direct_urls || []).length
+            ? op.direct_urls.map(u => `<div class="url-cell direct" title="${esc(u)}">${esc(u.substring(0, 50))}</div>`).join('')
+            : (op.short_urls || []).length ? '<span style="color:#78716C;font-size:10px">Resolved via affiliate</span>' : '<div class="url-cell" style="background:#F0EDE8;color:#A8A29E">—</div>';
+
+          const message = op.raw_message ? esc(op.raw_message) : '—';
+
+          return \`<tr>
+            <td><span class="time-cell">\${timestamp}</span></td>
+            <td><span class="channel">\${esc(channel)}</span></td>
+            <td><span style="font-size:11px;font-weight:600">\${esc(platform)}</span></td>
+            <td>\${shortUrlsHtml}</td>
+            <td>\${affiliateHtml}</td>
+            <td>\${directHtml}</td>
+            <td><div class="copy-text">\${message}</div></td>
+          </tr>\`;
+        }).join('')}
+      </tbody>
+    </table>`;
+}
+
+async function generateAndApprove(logIndex, raw) {
+  showToast('🤖 Generating copy and image...');
+  console.log('[GENERATE] Starting with logIndex:', logIndex, 'raw:', raw.substring(0, 50));
+
+  try {
+    const controller = new AbortController();
+    const timeout = setTimeout(() => controller.abort(), 45000); // 45 second timeout
+
+    const response = await fetch('/admin/generate', {
+      method: 'POST',
+      headers: {'Content-Type': 'application/json'},
+      body: JSON.stringify({log_index: logIndex, raw_text: raw}),
+      signal: controller.signal
+    });
+
+    clearTimeout(timeout);
+
+    console.log('[GENERATE] Response status:', response.status);
+
+    if (!response.ok) {
+      showToast('❌ Server error: ' + response.status);
+      openEdit('', logIndex, '', '', raw);
+      return;
+    }
+
+    const result = await response.json();
+    console.log('[GENERATE] Response:', result);
+
+    if (result.status === 'generated') {
+      console.log('[GENERATE] Success! Copy length:', result.copy.length, 'Image:', !!result.image_url);
+      document.getElementById('modalDealId').value = '';
+      document.getElementById('modalLogIndex').value = logIndex;
+      document.getElementById('modalMode').value = 'approve';
+      document.getElementById('modalTitle').textContent = '✨ Auto-Generated - Review & Save';
+      document.getElementById('modalCopy').value = result.copy || '';
+      document.getElementById('modalImageUrl').value = result.image_url || '';
+      document.getElementById('modalRawDisplay').textContent = raw;
+      previewImg();
+      document.getElementById('editModal').classList.add('open');
+      showToast('✅ Copy & image generated!');
+    } else {
+      console.log('[GENERATE] Failed with status:', result.status, 'message:', result.message);
+      showToast('⚠️ ' + (result.message || 'Generation failed'));
+      openEdit('', logIndex, '', '', raw);
+    }
+  } catch (e) {
+    console.error('[GENERATE] Exception:', e);
+    showToast('❌ Error: ' + e.message);
+    openEdit('', logIndex, '', '', raw);
+  }
 }
 
 function openEdit(dealId, logIndex, copy, imageUrl, raw) {

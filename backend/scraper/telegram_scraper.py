@@ -46,6 +46,10 @@ CHANNELS = [
     "ajio_myntra_coupon_offer",      # ~3.2K — Ajio + Myntra + H&M
     "Ajiocoupons",                   # ~1.4K — Ajio intl brands: M&S, Levi's, Nike, Superdry
     "fashion_loot_deals",            # women's clothing Myntra/Ajio/Meesho
+    # New high-quality channels
+    "urindianconsumer_official",     # Community-driven consumer deals
+    "desidime",                      # India's largest deals community
+    "icoolzTricks",                  # Electronics + multi-category deals
 ]
 
 POLL_INTERVAL   = 60   # seconds between full poll cycles

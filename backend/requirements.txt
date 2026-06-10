@@ -5,3 +5,4 @@ uvicorn==0.30.6
 supabase==2.7.4
 python-dotenv==1.0.1
 pydantic==2.8.2
+firebase-admin==6.5.0

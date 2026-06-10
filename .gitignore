@@ -1,0 +1,52 @@
+# Environment & secrets — NEVER commit these
+.env
+.env.*
+*.env
+firebase-service-account.json
+play-store-key.json
+google-services.json
+GoogleService-Info.plist
+*service-account*.json
+
+# Telegram session files
+*.session
+*.session-journal
+
+# Python
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+venv/
+.venv/
+*.egg-info/
+dist/
+build/
+
+# Node / React Native
+node_modules/
+.expo/
+web-build/
+dist/
+*.orig.*
+
+# Native build artifacts
+*.jks
+*.p8
+*.p12
+*.key
+*.mobileprovision
+android/
+ios/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# IDE
+.vscode/
+.idea/
+*.swp
