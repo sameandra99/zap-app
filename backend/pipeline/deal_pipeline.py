@@ -7,8 +7,10 @@ Loot. — Deal Pipeline
 """
 
 import os
+import re
 import json
 import base64
+import hashlib
 import httpx
 from typing import Optional
 from datetime import datetime, timezone
@@ -43,7 +45,10 @@ AFFILIATE_TAGS = {
 SYSTEM_PROMPT = """You are a deal curator for Loot., an Indian deals app focused on OBJECTIVELY GOOD DEALS.
 You receive raw messages from Telegram deal channels and must:
 1. Decide if it's a real, shareable deal (not spam, not old, has a price, would impress someone)
-2. Rewrite it in Loot. copy style if valid
+2. PRESERVE good original copy where possible — only rewrite if original is vague or generic
+3. Only enhance copy if it adds clarity, never oversimplify premium source material
+
+PRESERVATION RULE: If the original message already contains specific product names, exact discounts, and good tone — use it as-is with minimal cleanup. Don't regenerate unless original is generic ("women's styles up to 100% off").
 
 SHAREABILITY FILTER — Would someone actually tell a friend about this?
 
@@ -147,6 +152,89 @@ def is_premium_brand(copy: str) -> bool:
     return any(brand in text for brand in PREMIUM_BRANDS)
 
 
+def score_copy_quality(raw_text: str) -> tuple[int, str]:
+    """
+    Score original copy quality (1-10).
+    Returns: (score, reason_for_rewrite_or_preserve)
+
+    High quality (7+): Preserve as-is
+    Medium quality (4-6): Enhance but keep original structure
+    Low quality (1-3): Full rewrite recommended
+    """
+    score = 0
+    reasons = []
+    text = raw_text.lower()
+
+    # POSITIVE SIGNALS (add points for good signals)
+
+    # 1. Contains specific product/brand names (not generic categories)
+    specific_brands = PREMIUM_BRANDS | {
+        "puma", "nike", "adidas", "amazon", "myntra", "ajio", "flipkart", "nykaa",
+        "apple", "samsung", "sony", "oneplus", "boat", "jbl", "reebok", "skechers",
+        "zara", "h&m", "mango", "gap", "lavie", "aldo", "michael kors", "coach",
+        "lakme", "maybelline", "mac", "clinique", "himalaya", "dove", "gillette"
+    }
+    if any(brand in text for brand in specific_brands):
+        score += 3
+        reasons.append("specific_brand")
+
+    # 2. Contains MULTIPLE discount percentages (stacked discounts = very specific)
+    discounts = re.findall(r'\d{1,2}%', text)
+    if len(discounts) >= 2:
+        score += 4  # High points for stacked offers like "70% + 30% off"
+        reasons.append("stacked_discounts")
+    elif len(discounts) == 1:
+        score += 2
+        reasons.append("has_discount_pct")
+
+    # 3. Contains specific pricing (₹1,999 or ₹X,XXX format)
+    if re.search(r'₹[\d,]+', text):
+        score += 2
+        reasons.append("has_pricing")
+
+    # 4. Contains urgency signals (time-bound or stock-bound)
+    if any(word in text for word in ["ends", "today", "tonight", "6pm", "6:00", "limited", "stock", "flash", "hurry"]):
+        score += 1
+        reasons.append("has_urgency")
+
+    # 5. Contains coupon/promo code explicitly
+    if re.search(r'code\s*[:\-]\s*[A-Z0-9]{3,10}|use\s+[A-Z0-9]{3,10}', raw_text, re.IGNORECASE):
+        score += 1
+        reasons.append("has_coupon")
+
+    # 6. Length is good (not too short, not spam-y)
+    if 30 <= len(raw_text.strip()) <= 500:
+        score += 1
+        reasons.append("good_length")
+
+    # 7. Contains "sale" or promotional language
+    if any(word in text for word in ["sale", "deal", "offer", "discount", "promo", "off"]):
+        score += 1
+        reasons.append("promotional_context")
+
+    # NEGATIVE SIGNALS (penalize weak signals)
+
+    # Generic category words ONLY if no brand/price/stacked_discount context
+    if (not any(brand in text for brand in specific_brands) and
+        not re.search(r'₹[\d,]+', text) and
+        len(discounts) < 2):  # Don't penalize if has stacked discounts
+        generic_words = ["styles", "clothing", "clothes", "products", "items", "stuff"]
+        generic_count = sum(1 for word in generic_words if f" {word}" in text or text.startswith(word))
+        if generic_count > 0:
+            score -= 1
+            reasons.append("too_generic")
+
+    # Vague discount language ONLY if no actual discount numbers
+    if "up to" in text and not discounts:
+        score -= 1
+        reasons.append("vague_discount")
+
+    # Clamp score to 1-10
+    score = max(1, min(10, score))
+
+    return score, ",".join(reasons)
+
+
 async def send_push_notification(title: str, body: str):
     """Send push notification via Expo Push API to all registered devices."""
     api_url = os.environ.get("LOOT_API_URL", "http://localhost:8000")
@@ -157,8 +245,19 @@ async def send_push_notification(title: str, body: str):
         print(f"  [PUSH] {type(e).__name__}: {str(e)[:60]}")
 
 
-async def call_llm(raw_text: str, extracted_urls: list = None) -> dict:
-    """Send raw deal text to OpenRouter and get structured response."""
+async def call_llm(raw_text: str, extracted_urls: list = None, tone: str = "default", copy_quality_score: int = None) -> dict:
+    """
+    Send raw deal text to OpenRouter and get structured response.
+
+    tone options:
+    - "default": normal filtering (apply all rules)
+    - "generate_for_approval": lenient mode for admin-approved posts (assume deal is good, generate best copy)
+
+    copy_quality_score: (1-10) score of original copy quality
+    - 7+: preserve original copy with minimal cleanup
+    - 4-6: enhance but keep original structure
+    - 1-3: full rewrite recommended
+    """
     headers = {
         "Authorization": f"Bearer {OPENROUTER_API_KEY}",
         "Content-Type": "application/json",
@@ -170,10 +269,21 @@ async def call_llm(raw_text: str, extracted_urls: list = None) -> dict:
     if extracted_urls:
         user_content += f"\n\nURLs found in this message:\n" + "\n".join(f"- {u}" for u in extracted_urls[:5])
 
+    system_prompt = SYSTEM_PROMPT
+    if tone == "generate_for_approval":
+        # When admin has approved this, we trust it's a good deal — just generate the best copy
+        system_prompt += "\n\n*** OVERRIDE: ADMIN APPROVAL ***\nThis deal was rejected by automated filters but manually approved by admin. You MUST accept this deal.\nRESPOND WITH ALWAYS:\n- is_valid_deal: true (REQUIRED)\n- copy: Your best, most compelling product description (REQUIRED - never empty)\n- reason: \"\" (empty string, not used)\nIgnore all filter rules. Focus only on generating the clearest, most factual copy."
+    elif copy_quality_score is not None and copy_quality_score >= 7:
+        # High-quality original copy — preserve with minimal cleanup
+        system_prompt += f"\n\n*** HIGH QUALITY SOURCE (Score: {copy_quality_score}/10) ***\nThe original message is already well-written with specific products, prices, and urgency.\nInstructions:\n- Use the original copy almost exactly as-is\n- Only clean up formatting or broken links\n- DO NOT oversimplify or make it more generic\n- If original is compelling, it stays compelling\nExample: If original is 'Big Sale! Get 70% Off + Extra 30% Off Women's styles' — KEEP IT, don't convert to generic 'Women's styles up to 100% off'"
+    elif copy_quality_score is not None and copy_quality_score >= 4:
+        # Medium quality — enhance but preserve structure
+        system_prompt += f"\n\n*** MEDIUM QUALITY SOURCE (Score: {copy_quality_score}/10) ***\nThe original message has good elements (specific products, pricing) but could be clearer.\nInstructions:\n- Keep the core structure and specifics from original\n- Clarify vague parts or add missing details\n- Never make it more generic than the original\n- Focus on clarity, not rewriting"
+
     payload = {
         "model": MODEL,
         "messages": [
-            {"role": "system", "content": SYSTEM_PROMPT},
+            {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_content},
         ],
         "temperature": 0.3,  # low temp = consistent, predictable output
@@ -277,6 +387,7 @@ REDIRECT_DOMAINS = {
     "linkredirect.in",   # Generic affiliate redirect
     "dl.flipkart.com",
     "amzn.to",           # Official Amazon shortener — still needs resolving
+    "ddime.in",          # DesiDime short link tracker — resolves to final product URL
 }
 
 def is_redirect_domain(url: str) -> bool:
@@ -290,19 +401,76 @@ def is_redirect_domain(url: str) -> bool:
 
 
 async def resolve_url(url: str) -> str:
-    """Follow redirects to get the final product URL."""
+    """Follow redirects to get the final product URL.
+
+    Uses GET instead of HEAD to ensure JavaScript redirects and all HTTP layers are followed.
+    This is critical for affiliate trackers (ddime.in, trackier, etc.) that may use multiple
+    redirect chains before reaching the actual product URL.
+    """
     if not url:
         return url
     try:
         headers = {"User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36"}
+        # Use GET (not HEAD) to ensure all redirect layers are followed, including tracking URLs
         async with httpx.AsyncClient(timeout=8, follow_redirects=True, max_redirects=10) as client:
-            r = await client.head(url, headers=headers)
-            final = str(r.url)
-            if final != url:
-                print(f"  🔗 Resolved: {url[:40]} → {final[:60]}")
-            return final
+            # Stream the GET to avoid downloading massive payloads
+            async with client.stream("GET", url, headers=headers) as r:
+                final = str(r.url)
+                if final != url:
+                    print(f"  🔗 Resolved: {url[:40]} → {final[:60]}")
+                return final
     except Exception:
         return url
+
+
+# Known generic/junk images that must never be used as a product image.
+# These are placeholder/logo/sprite files retailers serve on bot-stripped or
+# category pages. Keyed by md5 of the raw bytes.
+KNOWN_JUNK_IMAGE_HASHES = {
+    "d892b0fb99817f5b5f19a7b05b56c186",  # Amazon UI sprite sheet (smile/prime/icons)
+    "e70919d899a780b1ccbfe83c3182fa24",  # Myntra logo (constant.myntassets.com/.../mlogo.png)
+}
+
+# Self-healing detection: count how often each image hash is seen. The same
+# product image legitimately appears once per deal; a generic logo/placeholder
+# appears across many different deals. Auto-blocklist after this many repeats.
+_image_hash_counts: dict = {}
+_JUNK_REPEAT_THRESHOLD = 3
+
+
+def is_junk_image(image_bytes: Optional[bytes], count: bool = False) -> bool:
+    """
+    True if the image is a known/generic placeholder (logo, sprite, banner)
+    rather than a real product image.
+
+    Detection layers:
+      1. Static blocklist of known junk hashes (Amazon sprite, Myntra logo, ...)
+      2. Self-healing: any image seen across 3+ different deals is generic junk
+
+    count: only set True at the single save chokepoint, so each stored deal
+    tallies an image hash exactly once (avoids double-counting → false blocks).
+    """
+    if not image_bytes:
+        return True
+    try:
+        h = hashlib.md5(image_bytes).hexdigest()
+    except Exception:
+        return False
+
+    if h in KNOWN_JUNK_IMAGE_HASHES:
+        print(f"  🚫 Junk image rejected (known placeholder hash {h[:8]})")
+        return True
+
+    if count:
+        # Frequency-based auto-detection — a real product image is unique per
+        # deal; a generic logo/placeholder recurs across many different deals.
+        _image_hash_counts[h] = _image_hash_counts.get(h, 0) + 1
+        if _image_hash_counts[h] >= _JUNK_REPEAT_THRESHOLD:
+            KNOWN_JUNK_IMAGE_HASHES.add(h)  # promote to blocklist for this run
+            print(f"  🚫 Junk image auto-detected (hash {h[:8]} seen {_image_hash_counts[h]}x across deals)")
+            return True
+
+    return False
 
 
 async def fetch_amazon_image(asin: str) -> Optional[bytes]:
@@ -321,13 +489,15 @@ async def fetch_amazon_image(asin: str) -> Optional[bytes]:
                 return None
 
             html = r.text
-            # Extract the main product image URL from page JSON
+            # Extract the main product image URL from page JSON.
+            # ONLY accept /images/I/ paths (I = Item/product). Amazon's UI sprite
+            # sheet and logos live under /images/G/ (Gateway assets) and must NOT
+            # be used — on bot-detected/stripped pages, og:image returns that sprite.
             img_url = None
             for pattern in [
                 r'"large":"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
                 r'"hiRes":"(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
-                r'data-old-hires="(https://[^"]+\.jpg)"',
-                r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
+                r'data-old-hires="(https://m\.media-amazon\.com/images/I/[^"]+\.jpg)"',
             ]:
                 m = re.search(pattern, html)
                 if m:
@@ -335,20 +505,25 @@ async def fetch_amazon_image(asin: str) -> Optional[bytes]:
                     break
 
             if not img_url:
+                # Stripped/bot page — no product image JSON. Better no image than a sprite.
+                print(f"  ℹ️  No product image JSON on Amazon page for {asin} (likely bot-stripped)")
                 return None
 
             img_r = await client.get(img_url, headers=headers)
-            if img_r.status_code == 200 and len(img_r.content) > 5000:
+            if img_r.status_code == 200 and len(img_r.content) > 2000 and not is_junk_image(img_r.content):
                 print(f"  🛒 Amazon product image fetched for {asin} ({len(img_r.content)} bytes)")
                 return img_r.content
+            elif img_r.status_code == 200:
+                print(f"  ℹ️  Amazon image rejected (junk or too small: {len(img_r.content)} bytes)")
     except Exception as e:
         print(f"  ℹ️  Amazon image fetch failed: {type(e).__name__}")
     return None
 
 
 async def fetch_og_image(url: str) -> Optional[bytes]:
-    """Fetch og:image from a product URL — free, ~200-500ms, ~85% success rate.
-    Follows redirects for tracker/shortener domains first."""
+    """Fetch og:image from a product URL with smart fallbacks.
+    Tries: og:image → twitter:image → schema.org image → product images in markup.
+    Returns first valid image found."""
     if not url:
         return None
     try:
@@ -366,33 +541,57 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
             if r.status_code != 200:
                 return None
 
-            # Extract og:image (try multiple formats)
+            # Try multiple image sources in priority order
+            img_urls = []
+
+            # 1. og:image (highest priority)
             patterns = [
                 r'<meta[^>]+property=["\']og:image["\'][^>]+content=["\']([^"\']+)["\']',
                 r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:image["\']',
-                r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']',
             ]
-            img_url = None
             for pattern in patterns:
                 match = re.search(pattern, r.text, re.IGNORECASE)
                 if match:
-                    img_url = match.group(1)
+                    img_urls.append(match.group(1))
                     break
 
-            if not img_url or not img_url.startswith("http"):
-                return None
+            # 2. twitter:image (fallback)
+            match = re.search(r'<meta[^>]+name=["\']twitter:image["\'][^>]+content=["\']([^"\']+)["\']', r.text, re.IGNORECASE)
+            if match:
+                img_urls.append(match.group(1))
 
-            # Skip known logo/banner URLs (not product images)
-            skip_patterns = ["logo", "banner", "icon", "myntra-logo", "brand", "static/media"]
-            if any(p in img_url.lower() for p in skip_patterns):
-                print(f"  ℹ️  Skipping non-product image: {img_url[:60]}")
-                return None
+            # 3. schema.org Product image (e.g., "https://example.com/image.jpg")
+            schema_match = re.search(r'"image":\s*"([^"]+)"', r.text)
+            if schema_match:
+                img_urls.append(schema_match.group(1))
 
-            # Download the image
-            img_r = await client.get(img_url, headers=headers)
-            if img_r.status_code == 200 and len(img_r.content) > 5000:  # >5KB = likely a real product photo
-                print(f"  🌐 og:image fetched ({len(img_r.content)} bytes)")
-                return img_r.content
+            # 4. Actual product images in markup (img tags with alt="product" or in product divs)
+            for match in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', r.text):
+                src = match.group(1)
+                if any(skip in src.lower() for skip in ["logo", "banner", "icon", "brand", "sprite", "placeholder", "mlogo"]):
+                    continue
+                img_urls.append(src)
+
+            # Try to download each candidate image
+            for img_url in img_urls:
+                if not img_url or not img_url.startswith("http"):
+                    continue
+                # Skip URLs that are obviously logos/sprites/UI assets by path
+                low = img_url.lower()
+                if any(bad in low for bad in ["/images/g/", "mlogo", "sprite", "/logo", "logo.", "placeholder", "/portal/"]):
+                    continue
+
+                try:
+                    img_r = await client.get(img_url, headers=headers, timeout=5)
+                    size = len(img_r.content)
+                    if img_r.status_code == 200 and size > 1500 and not is_junk_image(img_r.content):
+                        print(f"  🌐 Image fetched ({size} bytes) from: {img_url[:60]}")
+                        return img_r.content
+                except Exception as e_img:
+                    print(f"  ℹ️  Failed to fetch {img_url[:50]}: {type(e_img).__name__}")
+                    continue
+
+            print(f"  ℹ️  No valid product image found (tried {len(img_urls)} candidates)")
     except Exception as e:
         print(f"  ℹ️  og:image fetch failed: {type(e).__name__}")
     return None
@@ -442,10 +641,6 @@ async def save_to_db(deal: dict, image_bytes: Optional[bytes]):
     except Exception as e:
         print(f"⚠️  DB save failed: {e}")
         # Don't crash the pipeline — log and move on
-
-
-import re
-import hashlib
 
 
 def extract_asin(url: str) -> str:
@@ -585,16 +780,20 @@ async def process_message(
     message_id: int = 0,
     timestamp_fetched: Optional[str] = None,
 ):
-    """Main pipeline: raw TG message → filtered + rewritten → stored."""
+    """Main pipeline: raw TG message → scored → filtered + enhanced → stored."""
     try:
         from supabase import create_client
         url  = os.environ["SUPABASE_URL"]
         key  = os.environ["SUPABASE_KEY"]
         sb   = create_client(url, key)
 
+        # Score original copy quality to decide preservation strategy
+        copy_quality, quality_reasons = score_copy_quality(raw_text)
+        print(f"  📊 Copy quality: {copy_quality}/10 ({quality_reasons})")
+
         # Pre-extract URLs so LLM doesn't miss them in Markdown syntax
         extracted_urls = extract_urls_from_text(raw_text)
-        result = await call_llm(raw_text, extracted_urls)
+        result = await call_llm(raw_text, extracted_urls, copy_quality_score=copy_quality)
         is_valid = result.get("is_valid_deal", False)
         reason = result.get("reason", "")
         deal_id = None
@@ -613,6 +812,8 @@ async def process_message(
                 "was_posted": False,
                 "source_channel": source_channel,
                 "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality,
+                "quality_reasons": quality_reasons,
             })
             return
 
@@ -630,6 +831,8 @@ async def process_message(
                 "was_posted": False,
                 "source_channel": source_channel,
                 "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality,
+                "quality_reasons": quality_reasons,
             })
             return
 
@@ -650,6 +853,8 @@ async def process_message(
                 "was_posted": False,
                 "source_channel": source_channel,
                 "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality,
+                "quality_reasons": quality_reasons,
             })
             return
 
@@ -670,13 +875,22 @@ async def process_message(
 
         # No Telegram image? Try fetching product image
         if not image_bytes and affiliate_url:
-            # For Amazon: use image CDN directly via ASIN (faster, not blocked)
             asin = extract_asin(affiliate_url)
+            is_amazon = bool(asin) or "amazon" in affiliate_url.lower()
             if asin:
+                # Amazon: only the product-image JSON path (never og:image — that
+                # returns the UI sprite on bot-stripped pages).
                 image_bytes = await fetch_amazon_image(asin)
-            # For other platforms: try og:image scraping
-            if not image_bytes:
+            if not image_bytes and not is_amazon:
+                # Non-Amazon: og:image scraping (now junk-filtered). Skipped for
+                # Amazon, whose og:image is a logo/sprite, not the product.
                 image_bytes = await fetch_og_image(affiliate_url)
+
+        # Final safety net: never store a known/generic junk image.
+        # count=True here — this is the single chokepoint, so each deal tallies once.
+        if image_bytes and is_junk_image(image_bytes, count=True):
+            print(f"  🚫 Dropping junk image before save for {deal_id}")
+            image_bytes = None
 
         await save_to_db(deal, image_bytes)
 
@@ -696,6 +910,8 @@ async def process_message(
             "deal_id": deal_id,
             "source_channel": source_channel,
             "timestamp_fetched": timestamp_fetched,
+            "copy_quality_score": copy_quality,
+            "quality_reasons": quality_reasons,
         })
 
     except json.JSONDecodeError:
@@ -718,6 +934,9 @@ def _try_log(sb, data: dict):
             "copy": data.get("llm_decision", {}).get("copy") if data.get("was_posted") else None,
             "llm_decision": data.get("llm_decision"),
             "source_channel": data.get("source_channel"),
+            # NEW: Copy quality metrics
+            "copy_quality_score": data.get("copy_quality_score"),
+            "quality_reasons": data.get("quality_reasons"),
         }
         httpx.post(f"{api_url}/log", json=log_entry, timeout=5)
     except Exception as e:
