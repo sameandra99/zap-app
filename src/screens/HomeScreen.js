@@ -46,15 +46,23 @@ export default function HomeScreen({ initialDealId }) {
   // the deal that was tapped.
   useEffect(() => {
     if (!initialDealId || !deals.length) return;
-    const idx = deals.findIndex((d) => String(d.id) === String(initialDealId));
-    if (idx === -1) return;
-
+    // Reset the category filter so the deal is guaranteed to be in the list
+    setActiveCategory("All");
     setHighlightedDealId(initialDealId);
-    // Scroll to the deal
-    listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
-    // Clear highlight after 3 seconds
-    const timer = setTimeout(() => setHighlightedDealId(null), 3000);
-    return () => clearTimeout(timer);
+
+    // Defer the scroll until after the list has re-rendered with "All"
+    const t = setTimeout(() => {
+      const idx = deals.findIndex((d) => String(d.id) === String(initialDealId));
+      if (idx === -1) return;
+      try {
+        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+      } catch (e) {
+        // scrollToIndex can throw if the row isn't measured yet — non-fatal
+      }
+    }, 350);
+
+    const clear = setTimeout(() => setHighlightedDealId(null), 3000);
+    return () => { clearTimeout(t); clearTimeout(clear); };
   }, [initialDealId, deals]);
 
   const filteredDeals = deals.filter(deal => {
@@ -82,6 +90,14 @@ export default function HomeScreen({ initialDealId }) {
         ref={listRef}
         data={filteredDeals}
         keyExtractor={(item) => item.id}
+        onScrollToIndexFailed={(info) => {
+          // Row not yet measured — retry once after a short delay (RN-recommended)
+          setTimeout(() => {
+            try {
+              listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
+            } catch (e) {}
+          }, 400);
+        }}
         renderItem={({ item }) => (
           <DealCard
             deal={item}
