@@ -29,10 +29,11 @@ function inferCategory(deal) {
   return "other";
 }
 
-export default function HomeScreen() {
+export default function HomeScreen({ initialDealId }) {
   const { deals, newDeals, loading, refreshing, error, refresh, acceptNewDeals, recordClick } = useDeals();
   const [activeCategory, setActiveCategory] = useState("All");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [highlightedDealId, setHighlightedDealId] = useState(null);
   const listRef = useRef(null);
 
   const handleNewDealsBanner = () => {
@@ -40,6 +41,21 @@ export default function HomeScreen() {
     acceptNewDeals();
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
+
+  // When app opens from a notification tap, scroll to and briefly highlight
+  // the deal that was tapped.
+  useEffect(() => {
+    if (!initialDealId || !deals.length) return;
+    const idx = deals.findIndex((d) => String(d.id) === String(initialDealId));
+    if (idx === -1) return;
+
+    setHighlightedDealId(initialDealId);
+    // Scroll to the deal
+    listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+    // Clear highlight after 3 seconds
+    const timer = setTimeout(() => setHighlightedDealId(null), 3000);
+    return () => clearTimeout(timer);
+  }, [initialDealId, deals]);
 
   const filteredDeals = deals.filter(deal => {
     if (activeCategory === "All") return true;
@@ -67,7 +83,11 @@ export default function HomeScreen() {
         data={filteredDeals}
         keyExtractor={(item) => item.id}
         renderItem={({ item }) => (
-          <DealCard deal={item} onBuy={recordClick} />
+          <DealCard
+            deal={item}
+            onBuy={recordClick}
+            highlighted={String(item.id) === String(highlightedDealId)}
+          />
         )}
         ListHeaderComponent={
           <View>
