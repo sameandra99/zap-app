@@ -228,6 +228,7 @@ def post_log(data: dict):
             "original_price": data.get("llm_decision", {}).get("original_price"),
             "coupon_code": data.get("llm_decision", {}).get("coupon_code"),
             "affiliate_url": data.get("affiliate_url") or data.get("llm_decision", {}).get("url"),
+            "resolved_url": data.get("resolved_url"),
             "llm_decision": data.get("llm_decision"),
             "admin_approved": data.get("admin_approved", False),
             "deal_id": data.get("deal_id"),
@@ -528,6 +529,55 @@ def get_overrides(limit: int = 20):
     return {"overrides": list(reversed(admin_overrides))[:limit], "count": len(admin_overrides)}
 
 
+@app.get("/admin/redirect-domains")
+def get_redirect_domains():
+    """List all redirect/tracker domains with their approval status."""
+    db = get_db_admin()
+    try:
+        result = (
+            db.table("redirect_domains")
+            .select("*")
+            .order("status", desc=False)
+            .order("seen_count", desc=True)
+            .execute()
+        )
+        rows = result.data or []
+        return {
+            "domains": rows,
+            "counts": {
+                "approved": sum(1 for r in rows if r.get("status") == "approved"),
+                "pending":  sum(1 for r in rows if r.get("status") == "pending"),
+                "blocked":  sum(1 for r in rows if r.get("status") == "blocked"),
+            },
+        }
+    except Exception as e:
+        return {"domains": [], "counts": {}, "error": str(e)}
+
+
+@app.post("/admin/redirect-domains/{domain}")
+def set_redirect_domain_status(domain: str, data: dict):
+    """Approve / block / reset a redirect domain. Body: {"status": "approved"|"blocked"|"pending"}."""
+    status = (data or {}).get("status", "")
+    if status not in ("approved", "blocked", "pending"):
+        raise HTTPException(status_code=400, detail="status must be approved, blocked, or pending")
+    db = get_db_admin()
+    try:
+        existing = db.table("redirect_domains").select("domain").eq("domain", domain).execute()
+        if existing.data:
+            db.table("redirect_domains").update({"status": status}).eq("domain", domain).execute()
+        else:
+            db.table("redirect_domains").insert({"domain": domain, "status": status}).execute()
+        # Bust the pipeline's in-memory cache so it takes effect immediately
+        try:
+            from pipeline.deal_pipeline import _domain_cache
+            _domain_cache["ts"] = 0.0
+        except Exception:
+            pass
+        return {"status": "updated", "domain": domain, "new_status": status}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
 @app.get("/admin/link-ops")
 def get_link_operations(limit: int = 100):
     """
@@ -536,51 +586,37 @@ def get_link_operations(limit: int = 100):
       Affiliate URL = resolved + affiliate-tagged URL stored in deals table
       Zap Deal URL  = affiliate URL with all tracking params stripped (clean product link)
     """
-    from pipeline.deal_pipeline import extract_urls_from_text, strip_affiliate_params, is_redirect_domain
+    from pipeline.deal_pipeline import extract_urls_from_text
 
     db = get_db_admin()
     try:
-        # Get recent logs
         logs_result = db.table("pipeline_logs").select(
-            "id, raw_text, affiliate_url, platform, timestamp_fetched, source_channel, copy, deal_id"
+            "id, raw_text, affiliate_url, resolved_url, platform, timestamp_fetched, source_channel, copy"
         ).order("timestamp_fetched", desc=True).limit(limit).execute()
-
-        # Build a map of deal_id → resolved affiliate_url from deals table
-        deal_ids = [r["deal_id"] for r in (logs_result.data or []) if r.get("deal_id")]
-        deals_map = {}
-        if deal_ids:
-            deals_result = db.table("deals").select("id, affiliate_url, copy").in_("id", deal_ids[:200]).execute()
-            for d in (deals_result.data or []):
-                deals_map[d["id"]] = d.get("affiliate_url", "")
 
         ops = []
         for log in logs_result.data or []:
-            raw_text      = log.get("raw_text", "")
-            log_url       = log.get("affiliate_url", "") or ""
-            platform      = log.get("platform", "")
-            copy          = log.get("copy", "") or ""
-            deal_id       = log.get("deal_id", "")
+            raw_text     = log.get("raw_text", "")
+            clean_url    = log.get("affiliate_url", "") or ""   # canonical, what we serve
+            resolved_url = log.get("resolved_url", "") or ""    # resolved, with tracking
+            platform     = log.get("platform", "")
+            copy         = log.get("copy", "") or ""
 
-            # All URLs extracted from original Telegram message
+            # All URLs from the original Telegram message
             raw_urls = extract_urls_from_text(raw_text)
 
-            # Use resolved URL from deals table if available (it went through redirect resolution)
-            # Fall back to log URL if not in deals (filtered deals don't have a deals row)
-            resolved_url = deals_map.get(deal_id, "") or log_url
+            # If no resolved intermediate stored (old rows / direct retailer), fall back to clean
+            affiliate_view = resolved_url or clean_url
 
-            # Zap Deal URL = resolved URL with tracking params stripped
-            zap_deal_url = strip_affiliate_params(resolved_url) if resolved_url else ""
-
-            # Only show if it's different from the raw URL (otherwise nothing useful to show)
             ops.append({
                 "id":            log.get("id"),
                 "timestamp":     log.get("timestamp_fetched"),
                 "channel":       log.get("source_channel", ""),
                 "platform":      platform,
                 "copy":          copy[:60],
-                "raw_urls":      raw_urls[:3],     # original message URLs
-                "affiliate_url": resolved_url,     # resolved + tagged URL
-                "zap_deal_url":  zap_deal_url,     # clean URL, no tracking
+                "raw_urls":      raw_urls[:3],    # short links from the message
+                "affiliate_url": affiliate_view,  # resolved destination, still has tracking
+                "zap_deal_url":  clean_url,        # canonical clean URL we store & serve
             })
 
         return {"operations": ops, "count": len(ops)}

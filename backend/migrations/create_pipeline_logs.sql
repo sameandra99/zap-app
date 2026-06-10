@@ -31,7 +31,12 @@ CREATE TABLE IF NOT EXISTS pipeline_logs (
 
   -- Image metadata
   image_url text,
-  image_source text
+  image_source text,
+
+  -- Copy quality + URL tracking
+  copy_quality_score integer,
+  quality_reasons text,
+  resolved_url text   -- resolved-but-not-cleaned intermediate (for Link Ops view)
 );
 
 -- Indexes for common queries

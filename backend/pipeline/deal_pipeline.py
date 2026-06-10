@@ -9,10 +9,12 @@ Loot. — Deal Pipeline
 import os
 import re
 import json
+import time
 import base64
 import hashlib
 import httpx
 from typing import Optional
+from urllib.parse import urlparse, parse_qsl
 from datetime import datetime, timezone
 from dotenv import load_dotenv
 from pathlib import Path
@@ -421,6 +423,235 @@ async def resolve_url(url: str) -> str:
                 return final
     except Exception:
         return url
+
+
+# ════════════════════════════════════════════════════════════════════════════
+# URL PIPELINE — deterministic, owned in code (not the LLM)
+#
+# Flow per deal:   pick best URL  →  resolve redirects  →  canonicalize  →  store
+#
+# - FINAL_RETAILERS : terminal hosts; no redirect to follow, just canonicalize
+# - approved redirect domains (DB) : follow them, then canonicalize the destination
+# - pending/unknown domains : surfaced in admin UI for approval, deal held back
+# - blocked domains : deal dropped
+# ════════════════════════════════════════════════════════════════════════════
+
+# Terminal ecommerce hosts — these ARE the destination, never a redirect.
+FINAL_RETAILERS = {
+    "amazon.in", "amazon.com",
+    "flipkart.com",
+    "myntra.com",
+    "ajio.com",
+    "nykaa.com", "nykaafashion.com",
+    "tatacliq.com",
+    "meesho.com",
+    "snapdeal.com",
+    "pepperfry.com",
+    "croma.com",
+    "reliancedigital.in",
+    "vijaysales.com",
+    "boat-lifestyle.com",
+    "firstcry.com",
+}
+
+# Chat / social hosts — never a product link, always skip.
+SOCIAL_HOSTS = (
+    "t.me", "telegram.me", "telegram.org", "telegra.ph",
+    "wa.me", "whatsapp.com", "chat.whatsapp.com",
+    "instagram.com", "facebook.com", "fb.com", "fb.me",
+    "youtube.com", "youtu.be", "twitter.com", "x.com",
+    "bit.ly",  # generic shortener that often points to channels, not products
+)
+
+# Tracking/affiliate query params to strip from generic (non-canonicalized) URLs.
+TRACKING_PARAMS = {
+    "tag", "affid", "aff", "affiliate", "affExtParam1", "affExtParam2",
+    "ref", "ref_", "refurl", "tracking", "trackingid", "trackier",
+    "utm_source", "utm_medium", "utm_campaign", "utm_term", "utm_content",
+    "source", "campaign", "click_id", "clickid", "cmpid",
+    "pf_rd_r", "pf_rd_p", "pd_rd_r", "pd_rd_w", "pd_rd_wg",
+    "sbo", "th", "psc", "_encoding", "smid", "linkcode",
+    "creative", "creativeasin", "ascsubtag", "content-id", "qid", "sr",
+    "icid", "gclid", "fbclid", "subid", "subid1", "subid2", "mid", "cuelinks",
+}
+
+
+def host_of(url: str) -> str:
+    """Registrable host of a URL, lowercased, without leading www."""
+    try:
+        h = (urlparse(url).netloc or "").lower()
+        return h[4:] if h.startswith("www.") else h
+    except Exception:
+        return ""
+
+
+def is_final_retailer(url: str) -> bool:
+    """True if host is a known terminal ecommerce site (no redirect to follow)."""
+    h = host_of(url)
+    return any(h == r or h.endswith("." + r) for r in FINAL_RETAILERS)
+
+
+def is_social_url(url: str) -> bool:
+    """True if URL points to a chat/social platform, not a product."""
+    u = url.lower()
+    return any(s in u for s in SOCIAL_HOSTS)
+
+
+def detect_platform(url: str) -> str:
+    """Derive platform from the URL host — more reliable than asking the LLM."""
+    h = host_of(url)
+    if "amazon" in h:   return "amazon"
+    if "flipkart" in h: return "flipkart"
+    if "myntra" in h:   return "myntra"
+    if "ajio" in h:     return "ajio"
+    if "nykaa" in h:    return "nykaa"
+    if "meesho" in h:   return "meesho"
+    if "tatacliq" in h: return "tatacliq"
+    if "pepperfry" in h:return "pepperfry"
+    return ""
+
+
+def pick_best_url(urls: list) -> str:
+    """
+    Deterministically choose the best product URL from a message's URLs.
+    - Drops social/chat links
+    - Prefers links that look like product pages (/dp/, /p/, /buy, /product)
+    - Falls back to the first non-social URL
+    """
+    if not urls:
+        return ""
+    candidates = [u for u in urls if not is_social_url(u)]
+    if not candidates:
+        return ""
+    for u in candidates:
+        if re.search(r"/(dp|gp/product|p|buy|product|prod)/", u, re.I):
+            return u
+    return candidates[0]
+
+
+def strip_tracking_generic(url: str) -> str:
+    """Remove known tracking params from a URL while keeping functional ones."""
+    if not url or "?" not in url:
+        return url
+    base, query = url.split("?", 1)
+    kept = []
+    for pair in query.split("&"):
+        key = pair.split("=", 1)[0].lower()
+        if key not in TRACKING_PARAMS:
+            kept.append(pair)
+    return f"{base}?{'&'.join(kept)}" if kept else base
+
+
+def canonicalize_url(url: str) -> str:
+    """
+    Turn a resolved retailer URL into a clean, canonical, tracking-free product link
+    that STILL WORKS. Platform-aware: keeps the params each site actually needs.
+    """
+    if not url:
+        return ""
+    try:
+        p = urlparse(url)
+        h = host_of(url)
+
+        # Amazon → canonical /dp/{ASIN} (drops everything else; ASIN is all it needs)
+        if "amazon" in h:
+            asin = extract_asin(url)
+            if asin:
+                return f"https://www.amazon.in/dp/{asin}"
+            return strip_tracking_generic(url)
+
+        # Flipkart → product path + pid (pid is REQUIRED to load the product)
+        if "flipkart" in h:
+            q = dict(parse_qsl(p.query))
+            pid = q.get("pid")
+            base = f"https://www.flipkart.com{p.path}"
+            return f"{base}?pid={pid}" if pid else base
+
+        # Myntra → path only (product is path-based, query is all tracking)
+        if "myntra" in h:
+            return f"https://www.myntra.com{p.path}".rstrip("/")
+
+        # Ajio → path only
+        if "ajio" in h:
+            return f"https://www.ajio.com{p.path}".rstrip("/")
+
+        # Nykaa → path + productId if present
+        if "nykaa" in h:
+            q = dict(parse_qsl(p.query))
+            pidn = q.get("productId")
+            base = f"https://www.nykaa.com{p.path}"
+            return f"{base}?productId={pidn}" if pidn else base
+
+        # Everything else → conservative generic strip
+        return strip_tracking_generic(url)
+    except Exception:
+        return strip_affiliate_params(url)
+
+
+# ── Redirect-domain approval registry (backed by Supabase, cached in memory) ──
+_domain_cache = {"data": {}, "ts": 0.0, "table_ok": True}
+_DOMAIN_CACHE_TTL = 120  # seconds — admin approvals take effect within ~2 min
+
+
+def _refresh_domain_cache(sb):
+    """Load redirect_domains statuses from DB into the in-memory cache."""
+    try:
+        rows = sb.table("redirect_domains").select("domain,status").execute()
+        _domain_cache["data"] = {r["domain"]: r["status"] for r in (rows.data or [])}
+        _domain_cache["ts"] = time.monotonic()
+        _domain_cache["table_ok"] = True
+    except Exception as e:
+        # Table not created yet — fall back to legacy code list, never drop deals
+        _domain_cache["table_ok"] = False
+        print(f"  ⚠️  redirect_domains table unavailable ({type(e).__name__}); using legacy list")
+
+
+def domain_status(sb, host: str) -> str:
+    """
+    Return 'approved' | 'blocked' | 'pending' for a host.
+    Falls back to the legacy in-code REDIRECT_DOMAINS list if the DB table
+    doesn't exist yet (pre-migration) so the pipeline never hard-breaks.
+    """
+    if not host:
+        return "pending"
+    if time.monotonic() - _domain_cache["ts"] > _DOMAIN_CACHE_TTL:
+        _refresh_domain_cache(sb)
+
+    if not _domain_cache["table_ok"]:
+        # Legacy behaviour: code-list domains are approved, all else "approved"
+        # too (old default) — avoids dropping deals before migration is run.
+        legacy = any(host == rd or host.endswith("." + rd) for rd in REDIRECT_DOMAINS)
+        return "approved" if legacy else "approved"
+
+    return _domain_cache["data"].get(host, "pending")
+
+
+def record_pending_domain(sb, host: str, sample_url: str):
+    """Upsert an unknown redirect domain as 'pending' so admin can approve it."""
+    if not host:
+        return
+    try:
+        now_iso = datetime.now(timezone.utc).isoformat()
+        existing = sb.table("redirect_domains").select("domain,seen_count").eq("domain", host).execute()
+        if existing.data:
+            sb.table("redirect_domains").update({
+                "seen_count": (existing.data[0].get("seen_count") or 0) + 1,
+                "last_seen": now_iso,
+                "sample_url": sample_url[:300],
+            }).eq("domain", host).execute()
+        else:
+            sb.table("redirect_domains").insert({
+                "domain": host,
+                "status": "pending",
+                "sample_url": sample_url[:300],
+                "first_seen": now_iso,
+                "last_seen": now_iso,
+                "seen_count": 1,
+            }).execute()
+        _domain_cache["ts"] = 0.0  # bust cache so it reappears on next read
+        print(f"  🕓 New redirect domain pending approval: {host}")
+    except Exception as e:
+        print(f"  ⚠️  Could not record pending domain {host}: {type(e).__name__}")
 
 
 # Known generic/junk images that must never be used as a product image.
@@ -855,30 +1086,74 @@ async def process_message(
             })
             return
 
-        platform = result.get("platform", "other")
-        original_url = result.get("url") or ""
+        # ── DETERMINISTIC URL PIPELINE ───────────────────────────────────────
+        # We own URL selection in code (not the LLM): pick → resolve → canonicalize.
+        # Order matters: resolve FIRST (short link → destination), THEN clean.
 
-        # Block low-quality platforms
-        if platform.lower() in BLOCKED_PLATFORMS or any(p in original_url for p in BLOCKED_URL_PATTERNS):
-            print(f"  🚫 Blocked platform ({platform}), skipping")
+        # 1. Pick the best product URL ourselves (LLM url is only a fallback)
+        product_url = pick_best_url(extracted_urls) or (result.get("url") or "")
+
+        if not product_url:
+            print(f"  🚫 No usable product link, skipping")
             _try_log(sb, {
-                "raw_text": raw_text[:500],
-                "llm_decision": result,
-                "is_valid_deal": False,
-                "filter_reason": f"Blocked platform: {platform}",
-                "was_posted": False,
-                "source_channel": source_channel,
+                "raw_text": raw_text[:500], "llm_decision": result,
+                "is_valid_deal": False, "filter_reason": "No usable product link in message",
+                "was_posted": False, "source_channel": source_channel,
                 "timestamp_fetched": timestamp_fetched,
-                "copy_quality_score": copy_quality,
-                "quality_reasons": quality_reasons,
+                "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
             })
             return
 
-        affiliate_url = build_affiliate_url(original_url, platform)
+        # 2. Resolve redirects — unless it's already a final retailer
+        if is_final_retailer(product_url):
+            resolved_url = product_url
+        else:
+            host = host_of(product_url)
+            status = domain_status(sb, host)
+            if status == "blocked":
+                print(f"  🚫 Blocked redirect domain: {host}")
+                _try_log(sb, {
+                    "raw_text": raw_text[:500], "llm_decision": result,
+                    "is_valid_deal": False, "filter_reason": f"Blocked redirect domain: {host}",
+                    "was_posted": False, "source_channel": source_channel,
+                    "timestamp_fetched": timestamp_fetched,
+                    "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+                })
+                return
+            if status == "pending":
+                # Unknown tracker — surface for admin approval, hold the deal back
+                record_pending_domain(sb, host, product_url)
+                print(f"  🕓 Holding deal — redirect domain pending approval: {host}")
+                _try_log(sb, {
+                    "raw_text": raw_text[:500], "llm_decision": result,
+                    "is_valid_deal": False,
+                    "filter_reason": f"Pending redirect-domain approval: {host}",
+                    "was_posted": False, "source_channel": source_channel,
+                    "timestamp_fetched": timestamp_fetched,
+                    "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+                })
+                return
+            # approved → follow it to the destination
+            resolved_url = await resolve_url(product_url)
 
-        # Resolve tracker/shortener domains to real product URLs
-        if affiliate_url and is_redirect_domain(affiliate_url):
-            affiliate_url = await resolve_url(affiliate_url)
+        # 3. Canonicalize the destination into a clean, working product URL
+        #    (keep resolved_url too — it's the "with tracking" intermediate for Link Ops)
+        affiliate_url = canonicalize_url(resolved_url)
+
+        # 4. Derive platform from the final host (more reliable than the LLM)
+        platform = detect_platform(affiliate_url) or result.get("platform", "other")
+
+        # 5. Block low-quality platforms (now checked against the RESOLVED url)
+        if platform.lower() in BLOCKED_PLATFORMS or any(p in affiliate_url for p in BLOCKED_URL_PATTERNS):
+            print(f"  🚫 Blocked platform ({platform}), skipping")
+            _try_log(sb, {
+                "raw_text": raw_text[:500], "llm_decision": result,
+                "is_valid_deal": False, "filter_reason": f"Blocked platform: {platform}",
+                "was_posted": False, "source_channel": source_channel,
+                "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+            })
+            return
 
         # Check if this URL/copy was already posted (dedup across channels)
         if await check_duplicate(sb, affiliate_url, result.get("copy", "")):
@@ -950,7 +1225,8 @@ async def process_message(
             "timestamp_fetched": timestamp_fetched,
             "copy_quality_score": copy_quality,
             "quality_reasons": quality_reasons,
-            "affiliate_url": affiliate_url,   # resolved URL (after redirect resolution)
+            "affiliate_url": affiliate_url,   # canonical clean URL (stored & served)
+            "resolved_url": resolved_url,     # intermediate: resolved, still has tracking
             "copy": result.get("copy", ""),
         })
 
