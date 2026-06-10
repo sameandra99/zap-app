@@ -539,7 +539,10 @@ def update_deal(deal_id: str, data: dict):
 
 @app.get("/admin/deals")
 def get_admin_deals(limit: int = 100):
-    """All current deals with full details for admin view."""
+    """All current deals with full details for admin view.
+    Joins the original Telegram message (raw_text) from pipeline_logs by deal_id
+    so the admin can compare the raw message against the generated copy.
+    """
     db = get_db_admin()
     result = (
         db.table("deals")
@@ -548,7 +551,31 @@ def get_admin_deals(limit: int = 100):
         .limit(limit)
         .execute()
     )
-    return {"deals": result.data or [], "count": len(result.data or [])}
+    deals = result.data or []
+
+    # Attach the original raw message for each deal (from pipeline_logs.deal_id)
+    deal_ids = [d["id"] for d in deals if d.get("id")]
+    raw_by_id = {}
+    if deal_ids:
+        try:
+            logs = (
+                db.table("pipeline_logs")
+                .select("deal_id, raw_text")
+                .in_("deal_id", deal_ids)
+                .execute()
+            )
+            for row in logs.data or []:
+                did = row.get("deal_id")
+                # Keep the first (any) raw_text we find for this deal_id
+                if did and did not in raw_by_id and row.get("raw_text"):
+                    raw_by_id[did] = row["raw_text"]
+        except Exception as e:
+            print(f"[ADMIN-DEALS] raw_text join failed: {e}")
+
+    for d in deals:
+        d["raw_text"] = raw_by_id.get(d.get("id"), "")
+
+    return {"deals": deals, "count": len(deals)}
 
 
 # In-memory store for admin overrides (for LLM learning)

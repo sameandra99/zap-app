@@ -260,6 +260,7 @@ function render() {
       ...allDeals.filter(d => !logDealIds.has(d.id)).map(d => ({
         type:'deal', is_valid:true, copy:d.copy, source_channel:d.source_channel,
         created_at:d.created_at, deal_id:d.id, image_url:d.image_url,
+        raw_text:d.raw_text || '',
         llm_decision:{platform:d.platform, url:d.affiliate_url}
       }))
     ];
