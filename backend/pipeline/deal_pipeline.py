@@ -1333,12 +1333,11 @@ async def process_message(
 
         await save_to_db(deal, image_bytes)
 
-        # Push notification for premium brand deals
-        if is_premium_brand(result["copy"]):
-            await send_push_notification(
-                title="⚡ Zap.",
-                body=result["copy"][:100],
-            )
+        # Push notification for every valid deal
+        await send_push_notification(
+            title="⚡ Zap.",
+            body=result["copy"][:100],
+        )
 
         _try_log(sb, {
             "raw_text": raw_text[:500],
@@ -1379,6 +1378,8 @@ def _try_log(sb, data: dict):
             # NEW: Copy quality metrics
             "copy_quality_score": data.get("copy_quality_score"),
             "quality_reasons": data.get("quality_reasons"),
+            "affiliate_url": data.get("affiliate_url"),   # canonical clean URL
+            "resolved_url":  data.get("resolved_url"),    # intermediate w/ tracking
         }
         httpx.post(f"{api_url}/log", json=log_entry, timeout=5)
     except Exception as e:
