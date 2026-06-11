@@ -37,7 +37,21 @@ BLOCKED_URL_PATTERNS = ["bilty.co", "shopsy.in", "meesho.com"]
 # them even at 90% off. Deterministic block (defense-in-depth alongside the
 # prompt, which generalises the principle to comparable brands).
 BLOCKED_BRANDS = {
-    "axe", "engage", "everyuth", "highlander", "ponds", "pond's", "rexona",
+    # deodorants / body sprays
+    "axe", "engage", "rexona", "fogg", "set wet", "wild stone", "denver",
+    # soaps & body wash
+    "dove", "lux", "lifebuoy", "santoor", "cinthol", "pears", "medimix", "dettol",
+    # shampoo / hair
+    "pantene", "sunsilk", "clinic plus", "head & shoulders",
+    # face & skin (mass-market)
+    "nivea", "olay", "ponds", "pond's", "everyuth", "garnier", "boroplus",
+    "vaseline", "fair & lovely", "glow & lovely", "fair and handsome",
+    # oral care
+    "colgate", "closeup", "pepsodent",
+    # hair oil
+    "parachute", "navratna",
+    # budget private-label fashion
+    "highlander",
 }
 
 
@@ -87,9 +101,9 @@ ALWAYS ACCEPT these brand × category combinations (examples of (a)):
   INTERNATIONAL FASHION (always accept, any discount): Zara, H&M, Mango, Marks & Spencer, M&S, Gap, ASOS, Superdry, Forever 21, GAS, Muji, Uniqlo, Tommy Hilfiger, Calvin Klein, Ralph Lauren, Levis, Levi's
   PREMIUM INDIAN FASHION (accept at 30%+ off): US Polo, Allen Solly, Van Heusen, Peter England, Arrow, Park Avenue, Louis Philippe
   BAGS/ACCESSORIES: Lavie, Caprese, Hidesign, Baggit, ALDO, Michael Kors, Coach, Kate Spade, Charles & Keith, Mango, Accessorize
-  BEAUTY/SKINCARE: Lakme, Maybelline, L'Oreal, Mamaearth, Dot & Key, The Ordinary, Minimalist, Plum, Biotique, Himalaya, Neutrogena, Olay, Nivea, Clinique, MAC, NYX, Faces Canada, Colorbar, Forest Essentials, Kama Ayurveda
-  HAIRCARE: Dove, TRESemme, Pantene, Schwarzkopf, Streax, Livon, Matrix, L'Oreal Professionnel
-  PERSONAL CARE: Gillette, Braun, Philips (grooming), Oral-B, Colgate, Sensodyne
+  BEAUTY/SKINCARE (aspirational only): Lakme, Maybelline, L'Oreal, Mamaearth, Dot & Key, The Ordinary, Minimalist, Plum, Biotique, Neutrogena, Clinique, MAC, NYX, Faces Canada, Colorbar, Forest Essentials, Kama Ayurveda
+  HAIRCARE (salon/professional only): TRESemme, Schwarzkopf, Streax, Livon, Matrix, L'Oreal Professionnel
+  PERSONAL CARE (grooming tools/devices): Gillette, Braun, Philips (grooming), Oral-B
   HOME/KITCHEN (accept at 40%+ off OR low absolute price — even "basic" items like cookware, toaster, kettle, mixer, cooker count): Prestige, Hawkins, Pigeon, Bergner, Wonderchef, Borosil, Butterfly, Milton, Cello, Tupperware, Bajaj, Philips, Morphy Richards, Bosch, IFB, Crompton, Usha, Havells, Faber, Glen, Preethi, Sujata, Inalsa, Agaro, Vidiem, Stovekraft, Greenchef, Nirlep, Amazon Brand (Solimo/Presto), Vasa, Kuvings
   FITNESS: Boldfit, Strauss, Nivia, Cosco, Decathlon
   WATCHES: Titan, Fastrack, Timex, Fossil, Casio, Seiko, Daniel Wellington
@@ -123,13 +137,21 @@ HOME/KITCHEN RULE (IMPORTANT — do not over-filter):
     The BRAND + real DISCOUNT is what makes it shareable, not novelty.
   - Only reject home/kitchen if it is UNBRANDED/no-name OR has a trivial discount (<40%) at a high price.
 
-NEVER ACCEPT — low-value mass-market brands (reject even at 90%+ off):
-  axe, engage, everyuth, ponds, rexona, highlander — and any comparable cheap,
-  commodity, non-aspirational brand (budget deodorants, mass-market everyday
-  personal care, budget private-label fashion).
-  PRINCIPLE: if the brand is cheap and commodity — something nobody feels any
-  spark receiving — reject it no matter how big the discount. Discount size does
-  NOT rescue a low-value brand. Aspiration and quality are required, not optional.
+NEVER ACCEPT — low-value mass-market FMCG brands (reject even at 90%+ off):
+  Deodorants/sprays: axe, engage, rexona, fogg, set wet, wild stone, denver
+  Soap/body wash: dove, lux, lifebuoy, santoor, cinthol, pears, medimix, dettol
+  Shampoo/hair: pantene, sunsilk, clinic plus, head & shoulders
+  Face/skin (mass): nivea, olay, ponds, everyuth, garnier, boroplus, vaseline,
+    fair & lovely, glow & lovely, fair and handsome
+  Oral care: colgate, closeup, pepsodent
+  Hair oil: parachute, navratna
+  Budget fashion: highlander
+  PRINCIPLE: everyday drugstore/supermarket commodities — soap, shampoo,
+  toothpaste, deodorant, face cream, hair oil — from mass-market brands are
+  NOT shareable, no matter the discount. If it's the kind of thing already on
+  every bathroom shelf and nobody would feel any spark receiving it, reject it.
+  Discount size does NOT rescue a low-value brand. Apply this to ANY comparable
+  brand even if not listed above. Aspiration and quality are required.
 
 REJECT:
   - Low-value mass-market brands above (regardless of discount)
