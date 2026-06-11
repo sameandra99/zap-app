@@ -32,6 +32,25 @@ OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
 BLOCKED_PLATFORMS = {"bilty", "shopsy", "meesho"}
 BLOCKED_URL_PATTERNS = ["bilty.co", "shopsy.in", "meesho.com"]
 
+# Low-value mass-market brands we never feature, regardless of discount.
+# These are cheap, commodity, non-aspirational items — nobody shares a deal on
+# them even at 90% off. Deterministic block (defense-in-depth alongside the
+# prompt, which generalises the principle to comparable brands).
+BLOCKED_BRANDS = {
+    "axe", "engage", "everyuth", "highlander", "ponds", "pond's", "rexona",
+}
+
+
+def blocked_brand_in_text(text: str) -> Optional[str]:
+    """Return the blocked brand name if one appears as a whole word in text, else None."""
+    if not text:
+        return None
+    low = text.lower()
+    for brand in BLOCKED_BRANDS:
+        if re.search(r'(?<![a-z])' + re.escape(brand) + r'(?![a-z])', low):
+            return brand
+    return None
+
 
 AFFILIATE_TAGS = {
     "amazon":   os.getenv("AMAZON_AFFILIATE_TAG", "lootdeals-21"),
@@ -54,7 +73,15 @@ PRESERVATION RULE: If the original message already contains specific product nam
 
 SHAREABILITY FILTER — Would someone actually tell a friend about this?
 
-ALWAYS ACCEPT these brand × category combinations:
+CORE PRINCIPLE (apply this judgement, the lists below are only examples — not exhaustive):
+  A deal is shareable when it pairs a RECOGNISED / ASPIRATIONAL / QUALITY brand
+  with a MEANINGFUL discount. Two independent things make a deal worth posting:
+    (a) the brand — is it one people actually want / feel a small spark over?
+    (b) the discount — is it strong enough to matter (generally 40%+, or any
+        discount for premium/international brands)?
+  Judge unknown brands by this principle, not just by whether they appear below.
+
+ALWAYS ACCEPT these brand × category combinations (examples of (a)):
   ELECTRONICS: Apple, Samsung, Sony, OnePlus, Xiaomi, Realme, Boat, JBL, Bose, Canon, Nikon, LG, Philips, Dyson, Asus, Dell, HP, Lenovo
   FOOTWEAR: Puma, Nike, Adidas, Reebok, Skechers, New Balance, Crocs, Clarks, Bata, Woodland, Red Tape, Steve Madden, Converse, Vans, Under Armour
   INTERNATIONAL FASHION (always accept, any discount): Zara, H&M, Mango, Marks & Spencer, M&S, Gap, ASOS, Superdry, Forever 21, GAS, Muji, Uniqlo, Tommy Hilfiger, Calvin Klein, Ralph Lauren, Levis, Levi's
@@ -73,6 +100,21 @@ ACCEPT ALWAYS (any brand):
   - Flash/limited stock deals
   - International brand on Ajio/Myntra at any discount
 
+CATEGORY / LISTING DEALS — ACCEPT across ALL categories (this is a deal even
+without one specific product or an absolute price):
+  When a recognised, aspirational brand has a strong category-wide discount,
+  it IS shareable. Examples (apply to footwear, fashion, electronics, beauty,
+  watches, home — any category):
+    - "Puma sneakers up to 75% off"
+    - "Levi's jeans 50–70% off"
+    - "Titan watches min 40% off"
+    - "Boat audio up to 80% off"
+    - "The Body Shop skincare flat 50% off"
+  These have no single product and often no ₹ price — that is fine. The brand +
+  strong discount is the deal. Write the copy in the discount-only form
+  ("Puma sneakers, up to 75% off"). Do NOT reject these as "no specific product"
+  or "no price".
+
 HOME/KITCHEN RULE (IMPORTANT — do not over-filter):
   - A BRANDED kitchen/home appliance or cookware set at 40%+ off (or a clearly low price) IS shareable.
     A 59%-off Bergner triply cookware set at ₹3,149, a Pigeon toaster at ₹398, a Prestige mixer at 50% off —
@@ -81,14 +123,25 @@ HOME/KITCHEN RULE (IMPORTANT — do not over-filter):
     The BRAND + real DISCOUNT is what makes it shareable, not novelty.
   - Only reject home/kitchen if it is UNBRANDED/no-name OR has a trivial discount (<40%) at a high price.
 
+NEVER ACCEPT — low-value mass-market brands (reject even at 90%+ off):
+  axe, engage, everyuth, ponds, rexona, highlander — and any comparable cheap,
+  commodity, non-aspirational brand (budget deodorants, mass-market everyday
+  personal care, budget private-label fashion).
+  PRINCIPLE: if the brand is cheap and commodity — something nobody feels any
+  spark receiving — reject it no matter how big the discount. Discount size does
+  NOT rescue a low-value brand. Aspiration and quality are required, not optional.
+
 REJECT:
+  - Low-value mass-market brands above (regardless of discount)
   - Generic unbranded clothing (kurti/t-shirt/shirt/trousers) from unknown brands
   - Generic UNBRANDED home/kitchen goods from no-name sellers
   - Generic personal care from unknown brands
   - Credit-card / finance / loan / Bajaj Finserv EMI offers (not a product deal)
-  - Obvious spam, no price, or price-only messages
+  - Obvious spam, or empty messages with no product, no price AND no discount
   - Deals requiring 3+ steps to redeem (coupon + bank card + cashback stacking)
-  - When price is unclear, LEAN TOWARD ACCEPTING
+  NOTE: a missing ₹ price is NOT a reason to reject — a good brand with a strong
+  discount (e.g. "Puma sneakers 75% off") is valid even with no absolute price.
+  When a deal is borderline, LEAN TOWARD ACCEPTING (unless the brand is blocked).
 
 Zap. copy style — we are a deal curation app, not a retailer. Write like a knowledgeable friend texting you about something they spotted, not a sales banner.
 
@@ -1597,6 +1650,21 @@ async def process_message(
         # Score original copy quality to decide preservation strategy
         copy_quality, quality_reasons = score_copy_quality(raw_text)
         print(f"  📊 Copy quality: {copy_quality}/10 ({quality_reasons})")
+
+        # Hard brand blocklist — reject low-value mass-market brands before we
+        # even spend an LLM call. Deterministic; the prompt generalises the rest.
+        blocked = blocked_brand_in_text(raw_text)
+        if blocked:
+            print(f"  🚫 Blocked low-value brand: {blocked}")
+            _try_log(sb, {
+                "raw_text": raw_text[:500], "llm_decision": {},
+                "is_valid_deal": False,
+                "filter_reason": f"Blocked low-value brand: {blocked}",
+                "was_posted": False, "source_channel": source_channel,
+                "timestamp_fetched": timestamp_fetched or datetime.now(timezone.utc).isoformat(),
+                "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+            })
+            return
 
         # Pre-extract URLs so LLM doesn't miss them in Markdown syntax
         extracted_urls = extract_urls_from_text(raw_text)
