@@ -3,12 +3,15 @@ Loot. — Backend API
 FastAPI server that serves deals to the mobile app.
 """
 
-from fastapi import FastAPI, HTTPException
+from contextlib import asynccontextmanager
+from fastapi import Depends, FastAPI, HTTPException, Header
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import HTMLResponse
 from supabase import create_client
 from dotenv import load_dotenv
 from pathlib import Path
+from datetime import datetime, timezone, timedelta
+import httpx
 import os
 import time
 import json
@@ -36,16 +39,43 @@ except ImportError:
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-app = FastAPI(title="Zap. API", version="1.0.0")
+ADMIN_API_KEY = os.environ.get("ADMIN_API_KEY", "")
 
-# In-memory log store (scraper POSTs logs here)
-# Keeps only last 300 logs (~5 minutes at 1 deal/sec) for live dashboard
-# Older logs are archived to Supabase for analytics
+# In-memory stores
 pipeline_logs_store = []
-LOGS_IN_MEMORY = 300  # Keep dashboard responsive
-
-# In-memory device token store (persisted to DB via deals table workaround)
+LOGS_IN_MEMORY = 300
 device_tokens: set = set()
+
+
+def get_db():
+    """Anon key for app queries."""
+    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+
+def get_db_admin():
+    """Service role key for admin queries."""
+    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
+
+def _require_admin(x_admin_key: str = Header(default="")):
+    """FastAPI dependency — enforces ADMIN_API_KEY on destructive endpoints."""
+    if ADMIN_API_KEY and x_admin_key != ADMIN_API_KEY:
+        raise HTTPException(status_code=403, detail="Invalid admin key")
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Load persisted push tokens from Supabase on startup."""
+    try:
+        db = get_db_admin()
+        result = db.table("push_tokens").select("token").execute()
+        for row in result.data or []:
+            device_tokens.add(row["token"])
+        print(f"[PUSH] Loaded {len(device_tokens)} tokens from DB")
+    except Exception:
+        pass
+    yield
+
+
+app = FastAPI(title="Zap. API", version="1.0.0", lifespan=lifespan)
 
 app.add_middleware(
     CORSMiddleware,
@@ -53,14 +83,6 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
-
-def get_db():
-    """Anon key for app queries."""
-    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-
-def get_db_admin():
-    """Service role key for admin queries (deal_logs)."""
-    return create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_SERVICE_KEY"])
 
 
 @app.get("/")
@@ -88,21 +110,14 @@ def get_deals(limit: int = 50, offset: int = 0):
 @app.post("/deals/{deal_id}/click")
 def record_click(deal_id: str):
     """
-    Called when user taps Buy. Increments click count.
+    Called when user taps Buy. Increments click count atomically via RPC.
     Used for social proof ('2.4k clicks') and analytics.
     """
     db = get_db()
-
-    # Fetch current count
-    result = db.table("deals").select("clicks").eq("id", deal_id).single().execute()
+    result = db.rpc("increment_deal_clicks", {"deal_id": deal_id}).execute()
     if not result.data:
         raise HTTPException(status_code=404, detail="Deal not found")
-
-    new_count = (result.data.get("clicks") or 0) + 1
-
-    db.table("deals").update({"clicks": new_count}).eq("id", deal_id).execute()
-
-    return {"clicks": new_count}
+    return {"clicks": result.data}
 
 
 @app.get("/deals/{deal_id}")
@@ -146,20 +161,9 @@ def register_device(data: dict):
     return {"status": "ok", "registered": len(device_tokens)}
 
 
-@app.on_event("startup")
-def load_push_tokens():
-    """Load persisted push tokens from Supabase on startup."""
-    try:
-        db = get_db_admin()
-        result = db.table("push_tokens").select("token").execute()
-        for row in result.data or []:
-            device_tokens.add(row["token"])
-        print(f"[PUSH] Loaded {len(device_tokens)} tokens from DB")
-    except Exception:
-        pass
 
 
-@app.post("/notify")
+@app.post("/notify", dependencies=[Depends(_require_admin)])
 async def send_notification(data: dict):
     """Send push notification — routes by token type:
     - ExponentPushToken[...] → Expo push service
@@ -179,13 +183,12 @@ async def send_notification(data: dict):
 
     # Send to Expo tokens via Expo push service
     if expo_tokens:
-        import httpx as _httpx
         messages = [
             {"to": token, "title": title, "body": body, "sound": "default"}
             for token in expo_tokens
         ]
         try:
-            async with _httpx.AsyncClient(timeout=10) as client:
+            async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.post(
                     "https://exp.host/--/api/v2/push/send",
                     json=messages,
@@ -201,50 +204,55 @@ async def send_notification(data: dict):
         except Exception as e:
             print(f"[PUSH-EXPO] Error: {type(e).__name__}: {str(e)[:100]}")
 
-    # Send to raw FCM tokens via Firebase
+    # Send to raw FCM tokens via Firebase — batch via send_each() for speed
     if fcm_tokens and FIREBASE_ENABLED:
-        dead_tokens = []
-        for token in fcm_tokens:
-            try:
-                extra_data = {}
-                if data.get("deal_id"):
-                    extra_data["deal_id"] = str(data["deal_id"])
-                message = messaging.Message(
-                    notification=messaging.Notification(title=title, body=body),
-                    data=extra_data,
-                    android=messaging.AndroidConfig(
-                        priority="high",
-                        notification=messaging.AndroidNotification(
-                            sound="default",
-                            channel_id="deals",
-                        ),
+        extra_data = {"deal_id": str(data["deal_id"])} if data.get("deal_id") else {}
+        messages = [
+            messaging.Message(
+                notification=messaging.Notification(title=title, body=body),
+                data=extra_data,
+                android=messaging.AndroidConfig(
+                    priority="high",
+                    notification=messaging.AndroidNotification(
+                        sound="default",
+                        channel_id="deals",
                     ),
-                    token=token,
-                )
-                messaging.send(message)
-                results["fcm"] += 1
-            except Exception as e:
-                err_str = str(e).lower()
-                # Dead token — remove from active set and DB so we stop retrying
-                if "registration-token-not-registered" in err_str or \
-                   "invalid-registration-token" in err_str or \
-                   "requested entity was not found" in err_str:
-                    dead_tokens.append(token)
-                    print(f"  🗑️  Dead FCM token removed: {token[:20]}...")
+                ),
+                token=token,
+            )
+            for token in fcm_tokens
+        ]
+        try:
+            batch_response = messaging.send_each(messages)
+            dead_tokens = []
+            for i, resp in enumerate(batch_response.responses):
+                if resp.success:
+                    results["fcm"] += 1
                 else:
-                    print(f"  ⚠️  FCM send to {token[:20]}... failed: {type(e).__name__}: {str(e)[:80]}")
+                    err_str = str(resp.exception).lower() if resp.exception else ""
+                    if any(s in err_str for s in (
+                        "registration-token-not-registered",
+                        "invalid-registration-token",
+                        "requested entity was not found",
+                    )):
+                        dead_tokens.append(fcm_tokens[i])
+                        print(f"  🗑️  Dead FCM token removed: {fcm_tokens[i][:20]}...")
+                    else:
+                        print(f"  ⚠️  FCM failed for token {fcm_tokens[i][:20]}...: {err_str[:80]}")
 
-        # Prune dead tokens from memory + DB
-        if dead_tokens:
-            for t in dead_tokens:
-                device_tokens.discard(t)
-            try:
-                db = get_db_admin()
+            if dead_tokens:
                 for t in dead_tokens:
-                    db.table("push_tokens").delete().eq("token", t).execute()
-                print(f"[PUSH-FCM] Pruned {len(dead_tokens)} dead token(s)")
-            except Exception as e:
-                print(f"[PUSH-FCM] DB prune failed: {e}")
+                    device_tokens.discard(t)
+                try:
+                    db = get_db_admin()
+                    for t in dead_tokens:
+                        db.table("push_tokens").delete().eq("token", t).execute()
+                    print(f"[PUSH-FCM] Pruned {len(dead_tokens)} dead token(s)")
+                except Exception as e:
+                    print(f"[PUSH-FCM] DB prune failed: {e}")
+
+        except Exception as e:
+            print(f"[PUSH-FCM] Batch send failed: {type(e).__name__}: {str(e)[:100]}")
 
         print(f"[PUSH-FCM] Sent to {results['fcm']}/{len(fcm_tokens)} devices")
 
@@ -256,7 +264,6 @@ async def send_notification(data: dict):
 def post_log(data: dict):
     """Scraper POSTs logs here. Saves to DB and keeps hot cache in memory."""
     global pipeline_logs_store
-    from datetime import datetime, timezone
 
     # Save to database for persistence
     try:
@@ -310,7 +317,6 @@ def get_logs(limit: int = 300):
 
     # After a restart the in-memory store is empty — read from DB instead
     try:
-        from datetime import datetime, timezone, timedelta
         db = get_db_admin()
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
         result = (
@@ -361,7 +367,6 @@ def get_logs(limit: int = 300):
 def get_archived_logs(limit: int = 1000, days: int = 7):
     """Archived pipeline logs for analytics (older activity)."""
     try:
-        from datetime import datetime, timezone, timedelta
         db = get_db_admin()
         cutoff = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
         result = db.table("pipeline_logs_archive").select("*").gte("archived_at", cutoff).order("archived_at", desc=True).limit(limit).execute()
@@ -457,11 +462,9 @@ async def generate_copy_for_approval(data: dict):
         }
 
 
-@app.post("/admin/approve")
+@app.post("/admin/approve", dependencies=[Depends(_require_admin)])
 async def approve_filtered(data: dict):
     """Override LLM decision — approve a filtered post and add it to deals."""
-    import httpx as _httpx
-    from datetime import datetime, timezone
 
     log_index = data.get("log_index")
     custom_copy = data.get("copy", "")
@@ -508,13 +511,13 @@ async def approve_filtered(data: dict):
             "source_channel": log.get("source_channel"),
             "raw_text": log.get("raw_text"),
         })
-    except:
-        pass  # Learning is optional
+    except Exception:
+        pass  # Learning is optional — never block the approval
 
     return {"status": "approved", "deal_id": deal_id}
 
 
-@app.delete("/admin/deals/{deal_id}")
+@app.delete("/admin/deals/{deal_id}", dependencies=[Depends(_require_admin)])
 def remove_deal(deal_id: str):
     """Remove a posted deal from the app."""
     db = get_db_admin()
@@ -522,7 +525,7 @@ def remove_deal(deal_id: str):
     return {"status": "removed", "deal_id": deal_id}
 
 
-@app.patch("/admin/deals/{deal_id}")
+@app.patch("/admin/deals/{deal_id}", dependencies=[Depends(_require_admin)])
 def update_deal(deal_id: str, data: dict):
     """Edit copy or image of an existing deal."""
     db = get_db_admin()
@@ -585,7 +588,6 @@ def _try_record_override(override_data: dict):
     """Record admin override to improve future LLM decisions."""
     global admin_overrides
     try:
-        from datetime import datetime, timezone
         override_data["recorded_at"] = datetime.now(timezone.utc).isoformat()
         admin_overrides.append(override_data)
         # Keep only recent 50 overrides

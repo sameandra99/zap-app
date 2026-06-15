@@ -1,4 +1,4 @@
-import React, { useState, useRef } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   View, Text, FlatList, ActivityIndicator,
   StyleSheet, StatusBar, RefreshControl,
@@ -29,7 +29,7 @@ function inferCategory(deal) {
   return "other";
 }
 
-export default function HomeScreen({ initialDealId }) {
+export default function HomeScreen({ initialDealId, onDealViewed }) {
   const { deals, newDeals, loading, refreshing, error, refresh, acceptNewDeals, recordClick } = useDeals();
   const [activeCategory, setActiveCategory] = useState("All");
   const [menuOpen, setMenuOpen] = useState(false);
@@ -61,7 +61,10 @@ export default function HomeScreen({ initialDealId }) {
       }
     }, 350);
 
-    const clear = setTimeout(() => setHighlightedDealId(null), 3000);
+    const clear = setTimeout(() => {
+      setHighlightedDealId(null);
+      onDealViewed?.();  // reset so tapping the same deal again works
+    }, 3000);
     return () => { clearTimeout(t); clearTimeout(clear); };
   }, [initialDealId, deals]);
 

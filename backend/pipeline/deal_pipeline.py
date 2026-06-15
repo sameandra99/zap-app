@@ -22,10 +22,27 @@ from pathlib import Path
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
-# Cheap, fast, capable enough for this task
 MODEL = "meta-llama/llama-3.1-8b-instruct"
-
 OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions"
+
+# ── Supabase singletons — one client per key, reused across all pipeline calls ──
+_sb_anon = None
+_sb_service = None
+
+def _get_sb_anon():
+    global _sb_anon
+    if _sb_anon is None:
+        from supabase import create_client
+        _sb_anon = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    return _sb_anon
+
+def _get_sb_service():
+    global _sb_service
+    if _sb_service is None:
+        from supabase import create_client
+        key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
+        _sb_service = create_client(os.environ["SUPABASE_URL"], key)
+    return _sb_service
 
 # Affiliate tag placeholders — replace once accounts are approved
 # Platforms we don't want on Zap — cheap/off-brand sites
@@ -243,9 +260,12 @@ PREMIUM_BRANDS = {
 
 
 def is_premium_brand(copy: str) -> bool:
-    """Check if deal copy mentions a premium brand worth notifying about."""
+    """Check if deal copy mentions a premium brand — whole-word match only."""
     text = copy.lower()
-    return any(brand in text for brand in PREMIUM_BRANDS)
+    return any(
+        re.search(r'(?<![a-z])' + re.escape(brand) + r'(?![a-z])', text)
+        for brand in PREMIUM_BRANDS
+    )
 
 
 def score_copy_quality(raw_text: str) -> tuple[int, str]:
@@ -264,12 +284,14 @@ def score_copy_quality(raw_text: str) -> tuple[int, str]:
     # POSITIVE SIGNALS (add points for good signals)
 
     # 1. Contains specific product/brand names (not generic categories)
-    specific_brands = PREMIUM_BRANDS | {
+    # Explicitly exclude brands in BLOCKED_BRANDS — they score high but get rejected,
+    # which wastes an LLM call and produces misleading quality scores.
+    specific_brands = (PREMIUM_BRANDS | {
         "puma", "nike", "adidas", "amazon", "myntra", "ajio", "flipkart", "nykaa",
         "apple", "samsung", "sony", "oneplus", "boat", "jbl", "reebok", "skechers",
         "zara", "h&m", "mango", "gap", "lavie", "aldo", "michael kors", "coach",
-        "lakme", "maybelline", "mac", "clinique", "himalaya", "dove", "gillette"
-    }
+        "lakme", "maybelline", "mac", "clinique", "himalaya", "gillette",
+    }) - BLOCKED_BRANDS
     if any(brand in text for brand in specific_brands):
         score += 3
         reasons.append("specific_brand")
@@ -1401,13 +1423,8 @@ async def _fetch_flipkart_image(url: str) -> Optional[bytes]:
 async def save_to_db(deal: dict, image_bytes: Optional[bytes]):
     """Save processed deal to Supabase."""
     try:
-        from supabase import create_client
-        url          = os.environ["SUPABASE_URL"]
-        anon_key     = os.environ["SUPABASE_KEY"]
-        service_key  = os.environ.get("SUPABASE_SERVICE_KEY", anon_key)
-
-        sb_anon     = create_client(url, anon_key)      # for DB reads/writes
-        sb_service  = create_client(url, service_key)   # for storage uploads (bypasses RLS)
+        sb_anon    = _get_sb_anon()
+        sb_service = _get_sb_service()
 
         # Upload image using service role key
         image_url = None
@@ -1672,10 +1689,7 @@ async def process_message(
 ):
     """Main pipeline: raw TG message → scored → filtered + enhanced → stored."""
     try:
-        from supabase import create_client
-        url  = os.environ["SUPABASE_URL"]
-        key  = os.environ["SUPABASE_KEY"]
-        sb   = create_client(url, key)
+        sb = _get_sb_anon()
 
         # Score original copy quality to decide preservation strategy
         copy_quality, quality_reasons = score_copy_quality(raw_text)
@@ -1686,7 +1700,7 @@ async def process_message(
         blocked = blocked_brand_in_text(raw_text)
         if blocked:
             print(f"  🚫 Blocked low-value brand: {blocked}")
-            _try_log(sb, {
+            await _try_log(sb, {
                 "raw_text": raw_text[:500], "llm_decision": {},
                 "is_valid_deal": False,
                 "filter_reason": f"Blocked low-value brand: {blocked}",
@@ -1727,7 +1741,7 @@ async def process_message(
 
         if not is_valid:
             print(f"  ❌ Filtered out: {reason}")
-            _try_log(sb, {
+            await _try_log(sb, {
                 "raw_text": raw_text[:500],
                 "llm_decision": result,
                 "is_valid_deal": False,
@@ -1749,7 +1763,7 @@ async def process_message(
 
         if not product_url:
             print(f"  🚫 No usable product link, skipping")
-            _try_log(sb, {
+            await _try_log(sb, {
                 "raw_text": raw_text[:500], "llm_decision": result,
                 "is_valid_deal": False, "filter_reason": "No usable product link in message",
                 "was_posted": False, "source_channel": source_channel,
@@ -1766,7 +1780,7 @@ async def process_message(
             status = domain_status(sb, host)
             if status == "blocked":
                 print(f"  🚫 Blocked redirect domain: {host}")
-                _try_log(sb, {
+                await _try_log(sb, {
                     "raw_text": raw_text[:500], "llm_decision": result,
                     "is_valid_deal": False, "filter_reason": f"Blocked redirect domain: {host}",
                     "was_posted": False, "source_channel": source_channel,
@@ -1781,7 +1795,7 @@ async def process_message(
                 recorded = record_pending_domain(sb, host, product_url)
                 if recorded:
                     print(f"  🕓 Holding deal — redirect domain pending approval: {host}")
-                    _try_log(sb, {
+                    await _try_log(sb, {
                         "raw_text": raw_text[:500], "llm_decision": result,
                         "is_valid_deal": False,
                         "filter_reason": f"Pending redirect-domain approval: {host}",
@@ -1804,7 +1818,7 @@ async def process_message(
         # 5. Block low-quality platforms (now checked against the RESOLVED url)
         if platform.lower() in BLOCKED_PLATFORMS or any(p in affiliate_url for p in BLOCKED_URL_PATTERNS):
             print(f"  🚫 Blocked platform ({platform}), skipping")
-            _try_log(sb, {
+            await _try_log(sb, {
                 "raw_text": raw_text[:500], "llm_decision": result,
                 "is_valid_deal": False, "filter_reason": f"Blocked platform: {platform}",
                 "was_posted": False, "source_channel": source_channel,
@@ -1819,7 +1833,7 @@ async def process_message(
         #     send users to. Better to drop than post a dead-end link.
         if not is_product_url(affiliate_url):
             print(f"  🚫 Non-product destination ({affiliate_url[:60]}), skipping")
-            _try_log(sb, {
+            await _try_log(sb, {
                 "raw_text": raw_text[:500], "llm_decision": result,
                 "is_valid_deal": False,
                 "filter_reason": f"Non-product page (search/listing/home): {host_of(affiliate_url)}",
@@ -1833,7 +1847,7 @@ async def process_message(
         # Check if this URL/copy was already posted (dedup across channels)
         if await check_duplicate(sb, affiliate_url, result.get("copy", "")):
             print(f"  ⏭️  Duplicate, skipping: {result.get('copy','')[:60]}...")
-            _try_log(sb, {
+            await _try_log(sb, {
                 "raw_text": raw_text[:500],
                 "llm_decision": result,
                 "is_valid_deal": False,
@@ -1889,7 +1903,7 @@ async def process_message(
             deal_id=str(deal_id) if deal_id else None,
         )
 
-        _try_log(sb, {
+        await _try_log(sb, {
             "raw_text": raw_text[:500],
             "llm_decision": result,
             "is_valid_deal": True,
@@ -1911,13 +1925,13 @@ async def process_message(
         print(f"  ⚠️  Pipeline error: {e}")
 
 
-def _try_log(sb, data: dict):
-    """POST log to API (bypasses Supabase entirely)."""
+async def _try_log(sb, data: dict):
+    """POST log to API asynchronously (never blocks the pipeline event loop)."""
     try:
         api_url = os.environ.get("LOOT_API_URL", "http://localhost:8000")
         log_entry = {
-            "timestamp_fetched": data.get("timestamp_fetched"),  # When TG message arrived
-            "created_at": datetime.now(timezone.utc).isoformat(),  # When log entry was posted
+            "timestamp_fetched": data.get("timestamp_fetched"),
+            "created_at": datetime.now(timezone.utc).isoformat(),
             "deal_id": data.get("deal_id"),
             "raw_text": data.get("raw_text"),
             "is_valid": data.get("is_valid_deal", data.get("was_posted")),
@@ -1925,12 +1939,12 @@ def _try_log(sb, data: dict):
             "copy": data.get("llm_decision", {}).get("copy") if data.get("was_posted") else None,
             "llm_decision": data.get("llm_decision"),
             "source_channel": data.get("source_channel"),
-            # NEW: Copy quality metrics
             "copy_quality_score": data.get("copy_quality_score"),
             "quality_reasons": data.get("quality_reasons"),
-            "affiliate_url": data.get("affiliate_url"),   # canonical clean URL
-            "resolved_url":  data.get("resolved_url"),    # intermediate w/ tracking
+            "affiliate_url": data.get("affiliate_url"),
+            "resolved_url":  data.get("resolved_url"),
         }
-        httpx.post(f"{api_url}/log", json=log_entry, timeout=5)
+        async with httpx.AsyncClient(timeout=5) as client:
+            await client.post(f"{api_url}/log", json=log_entry)
     except Exception as e:
         print(f"  [LOG] {type(e).__name__}: {str(e)[:60]}")

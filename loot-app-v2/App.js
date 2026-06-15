@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect } from "react";
 import { StatusBar } from "expo-status-bar";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import HomeScreen from "./src/screens/HomeScreen";
@@ -7,14 +7,14 @@ import { useNotifications } from "./src/hooks/useNotifications";
 
 export default function App() {
   const [onboarded, setOnboarded] = useState(null);
-  // Ref so HomeScreen can scroll/highlight a deal opened from a notification
-  const pendingDealIdRef = useRef(null);
+  // State (not ref) so HomeScreen re-renders when a notification tap arrives
+  const [pendingDealId, setPendingDealId] = useState(null);
 
   // Called when user taps a push notification — passes the deal_id from FCM data
   const handleDealOpen = (dealId) => {
     if (!dealId) return;
     console.log("[App] Navigate to deal:", dealId);
-    pendingDealIdRef.current = dealId;
+    setPendingDealId(dealId);
   };
 
   useNotifications(handleDealOpen);
@@ -35,7 +35,7 @@ export default function App() {
   return (
     <>
       <StatusBar style="dark" backgroundColor="#F7F4EF" />
-      <HomeScreen initialDealId={pendingDealIdRef.current} />
+      <HomeScreen initialDealId={pendingDealId} onDealViewed={() => setPendingDealId(null)} />
     </>
   );
 }

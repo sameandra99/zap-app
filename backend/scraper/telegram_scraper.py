@@ -60,7 +60,7 @@ POLL_INTERVAL   = 60   # seconds between full poll cycles
 LOOKBACK_MINUTES = 10  # look back 10 minutes — catches messages missed during restarts
 
 sys.path.insert(0, str(Path(__file__).parent.parent))
-from pipeline.deal_pipeline import process_message
+from pipeline.deal_pipeline import process_message, split_multi_deal_message, is_generic_sale_announcement
 
 # Content-hash dedup: same message text broadcast across multiple channels
 # within a 15-minute window is only processed once.
@@ -86,15 +86,24 @@ def _is_duplicate_content(text: str) -> bool:
 
 
 def get_processed_ids_from_db() -> Set[str]:
-    """Load already-processed deal IDs from Supabase — persistent across restarts."""
+    """Load already-processed message IDs from Supabase — persistent across restarts.
+
+    Reads from pipeline_logs (not deals), so rejected messages are also tracked
+    and won't be reprocessed on every poll cycle after a restart.
+    """
     try:
         from supabase import create_client
         sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
-        # Get all deal IDs from the last 24 hours
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=24)).isoformat()
-        result = sb.table("deals").select("id").gte("created_at", cutoff).execute()
-        ids = {row["id"] for row in result.data}
-        print(f"📋 Loaded {len(ids)} processed IDs from DB")
+        # pipeline_logs has one row per message attempt — covers both posted and rejected
+        result = sb.table("pipeline_logs").select("deal_id, source_channel").gte("created_at", cutoff).execute()
+        # Reconstruct the "{channel}_{message_id}" composite IDs that the scraper uses
+        ids = set()
+        for row in result.data or []:
+            deal_id = row.get("deal_id") or ""
+            if deal_id:
+                ids.add(deal_id)
+        print(f"📋 Loaded {len(ids)} processed message IDs from DB")
         return ids
     except Exception as e:
         print(f"⚠️  Could not load processed IDs from DB: {e}")
@@ -162,8 +171,6 @@ async def poll_channel(client, channel_entity, channel_name: str, processed_ids:
             if image_bytes:
                 print(f"      🖼️  {len(image_bytes)} bytes")
 
-            # Check if message contains multiple deals
-            from pipeline.deal_pipeline import split_multi_deal_message, is_generic_sale_announcement
             message_timestamp = message.date.replace(tzinfo=timezone.utc).isoformat()
 
             # Pre-split check: reject generic sale announcements (no product/price)
