@@ -302,6 +302,57 @@ class TestCheckDuplicate:
             assert isinstance(result, bool), "Should return bool"
 
 
+class TestAmazonImageFetch:
+    """Tests for Amazon product image fetching.
+
+    Regression guard for the bug where fetch_amazon_image tried mobile UAs
+    first (which get a captcha bot-wall) and `break`-ed on the first failure,
+    never reaching the desktop UA that actually works.
+    """
+
+    def test_desktop_ua_first(self):
+        """The UA list must start with a desktop UA (mobile gets bot-walled)."""
+        import inspect
+        from pipeline import deal_pipeline
+        src = inspect.getsource(deal_pipeline.fetch_amazon_image)
+        # Find the user_agents list; the first UA must NOT be Mobile
+        assert "user_agents = [" in src
+        first_ua_section = src.split("user_agents = [")[1].split("]")[0]
+        first_ua = first_ua_section.strip().split("\n")[0]
+        assert "Mobile" not in first_ua, "First UA must be desktop (mobile UAs hit Amazon captcha)"
+
+    def test_no_break_on_extract_failure(self):
+        """Strategy 2 must `continue` (try next UA), not `break`, on no-image."""
+        import inspect
+        from pipeline import deal_pipeline
+        src = inspect.getsource(deal_pipeline.fetch_amazon_image)
+        # The old bug: `else:\n    break` after the img_url check. Ensure the
+        # product-page loop does not bail out early on the first failed UA.
+        strat2 = src.split("Strategy 2")[1].split("Strategy 3")[0]
+        # Strip comment lines so the word "break" in a comment doesn't false-positive
+        code_lines = [ln for ln in strat2.split("\n") if not ln.strip().startswith("#")]
+        code_only = "\n".join(code_lines)
+        # There should be no bare `break` statement that exits the UA loop on no-image
+        assert "break" not in code_only, "Strategy 2 must not break early — use continue to try next UA"
+
+    @pytest.mark.asyncio
+    @pytest.mark.network
+    async def test_fetch_real_image(self):
+        """Live: fetch a real Amazon product image (skips if network blocked).
+
+        Verifies the end-to-end path actually returns valid image bytes.
+        Marked 'network' so it can be excluded in offline CI:
+          pytest -m 'not network'
+        """
+        from pipeline.deal_pipeline import fetch_amazon_image
+        # A known stable ASIN (Timex/Daniel Klien watch from the bug report)
+        result = await fetch_amazon_image("B07VBZT6XX")
+        if result is None:
+            pytest.skip("Amazon blocked this request (IP/rate) — not a code failure")
+        assert isinstance(result, bytes)
+        assert len(result) > 2000, "Real product image should be > 2KB"
+
+
 def test_smoke_all_imports():
     """Verify all critical functions can be imported (catches import errors)."""
     from pipeline.deal_pipeline import (

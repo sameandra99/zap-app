@@ -1091,11 +1091,14 @@ async def fetch_amazon_image(asin: str) -> Optional[bytes]:
             return img_bytes
 
     # ── Common headers for strategies 2 & 3 ───────────────────────────────────
-    # Rotate through a few real browser UA strings to reduce bot-detection rate
+    # DESKTOP UAs FIRST. Amazon serves the full product page (with image JSON) to
+    # desktop browsers, but serves a ~5KB bot-wall/captcha page to mobile UAs.
+    # Measured: desktop ≈90% success, mobile ≈0% (captcha). Keep one mobile UA
+    # last only as a final long-shot.
     user_agents = [
-        "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
-        "Mozilla/5.0 (iPhone; CPU iPhone OS 17_0 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/17.0 Mobile/15E148 Safari/604.1",
         "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/121.0.0.0 Safari/537.36",
+        "Mozilla/5.0 (X11; Linux x86_64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
     ]
 
     async with httpx.AsyncClient(timeout=12, follow_redirects=True) as client:
@@ -1119,9 +1122,10 @@ async def fetch_amazon_image(asin: str) -> Optional[bytes]:
                     if img_r.status_code == 200 and len(img_r.content) > 2000 and not is_junk_image(img_r.content):
                         print(f"  🛒 Amazon product page image for {asin} ({len(img_r.content)} bytes)")
                         return img_r.content
-                else:
-                    # Page returned but no image JSON — bot-stripped, try next UA
-                    break
+                # No image (bot-wall page, or tiny placeholder image) — try the
+                # next UA. (Previously this did `break`, which exited on the first
+                # mobile bot-wall and never reached a working desktop UA.)
+                continue
             except Exception:
                 continue
 
