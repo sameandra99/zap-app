@@ -15,6 +15,21 @@ import httpx
 import os
 import time
 import json
+import traceback
+
+
+# ── Error logging — make bugs scream, let transient errors stay quiet ──────────
+# Programming errors (missing import, typo, wrong type) are deterministic bugs
+# that must never hide behind a silent `except: pass`. Log them loudly with a
+# traceback; transient/IO errors get a one-liner.
+_BUG_ERRORS = (NameError, AttributeError, ImportError, TypeError, UnboundLocalError)
+
+def log_exc(where: str, e: Exception) -> None:
+    if isinstance(e, _BUG_ERRORS):
+        print(f"🐛 BUG in {where}: {type(e).__name__}: {e}")
+        traceback.print_exc()
+    else:
+        print(f"  ⚠️  {where}: {type(e).__name__}: {str(e)[:120]}")
 
 # Firebase Cloud Messaging
 try:
@@ -70,8 +85,8 @@ async def lifespan(app: FastAPI):
         for row in result.data or []:
             device_tokens.add(row["token"])
         print(f"[PUSH] Loaded {len(device_tokens)} tokens from DB")
-    except Exception:
-        pass
+    except Exception as e:
+        log_exc("lifespan: load push tokens", e)
     yield
 
 

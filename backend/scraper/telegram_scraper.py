@@ -10,6 +10,7 @@ import os
 import re
 import sys
 import time as _time
+import traceback
 from typing import Optional, Set
 from pathlib import Path
 from dotenv import load_dotenv
@@ -226,7 +227,12 @@ async def poll_channel(client, channel_entity, channel_name: str, processed_ids:
             print(f"  ⏸️  {status} empty")
 
     except Exception as e:
-        print(f"  ❌ [{channel_name}] {type(e).__name__}: {str(e)[:70]}")
+        # A bug here silently skips a whole channel every poll — make it scream.
+        if isinstance(e, (NameError, AttributeError, ImportError, TypeError, UnboundLocalError)):
+            print(f"🐛 BUG in poll_channel[{channel_name}]: {type(e).__name__}: {e}")
+            traceback.print_exc()
+        else:
+            print(f"  ❌ [{channel_name}] {type(e).__name__}: {str(e)[:70]}")
 
 
 async def cleanup_old_deals(sb):

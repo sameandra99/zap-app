@@ -11,6 +11,7 @@ import re
 import json
 import time
 import base64
+import traceback
 import hashlib
 import httpx
 from typing import Optional
@@ -20,6 +21,23 @@ from dotenv import load_dotenv
 from pathlib import Path
 
 load_dotenv(Path(__file__).parent.parent / ".env")
+
+# ── Error logging — make bugs scream, let transient errors stay quiet ──────────
+# Programming errors (missing import, typo, wrong type) are deterministic bugs
+# that must NEVER hide behind graceful degradation — that's how the `timedelta`
+# NameError silently disabled dedup for days. Log these LOUDLY with a traceback
+# and a grep-able 🐛 marker. Transient/IO errors (network, timeout, DB blip) are
+# expected and logged as a one-liner; callers still degrade gracefully.
+_BUG_ERRORS = (NameError, AttributeError, ImportError, TypeError, UnboundLocalError)
+
+def log_exc(where: str, e: Exception) -> None:
+    """Log an exception, screaming if it's a programming bug."""
+    if isinstance(e, _BUG_ERRORS):
+        print(f"🐛 BUG in {where}: {type(e).__name__}: {e}")
+        traceback.print_exc()
+    else:
+        print(f"  ⚠️  {where}: {type(e).__name__}: {str(e)[:120]}")
+
 
 OPENROUTER_API_KEY = os.environ["OPENROUTER_API_KEY"]
 MODEL = "meta-llama/llama-3.1-8b-instruct"
@@ -1541,8 +1559,8 @@ async def save_to_db(deal: dict, image_bytes: Optional[bytes]):
         print(f"✅ Saved deal: {deal['copy'][:60]}...")
 
     except Exception as e:
-        print(f"⚠️  DB save failed: {e}")
-        # Don't crash the pipeline — log and move on
+        # Don't crash the pipeline — but make a programming bug scream
+        log_exc("save_to_db", e)
 
 
 def extract_asin(url: str) -> str:
@@ -1626,7 +1644,9 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
 
         return False
     except Exception as e:
-        print(f"  ⚠️  check_duplicate failed ({type(e).__name__}: {str(e)[:80]}) — allowing through")
+        # A bug here silently disables dedup (this exact except hid the timedelta
+        # NameError). Scream on bugs; allow through only on transient DB errors.
+        log_exc("check_duplicate — allowing through", e)
         return False
 
 
@@ -2024,7 +2044,8 @@ async def process_message(
     except json.JSONDecodeError:
         print("  ⚠️  LLM returned invalid JSON, skipping")
     except Exception as e:
-        print(f"  ⚠️  Pipeline error: {e}")
+        # Outer pipeline catch-all — a bug here would silently drop the deal.
+        log_exc("process_message", e)
 
 
 async def _try_log(sb, data: dict):
