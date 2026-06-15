@@ -1909,13 +1909,6 @@ async def process_message(
 
         await save_to_db(deal, image_bytes)
 
-        # Push notification for every valid deal — passes deal_id for deep linking
-        await send_push_notification(
-            title="⚡ Zap.",
-            body=result["copy"][:100],
-            deal_id=str(deal_id) if deal_id else None,
-        )
-
         await _try_log(sb, {
             "raw_text": raw_text[:500],
             "llm_decision": result,

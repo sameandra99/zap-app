@@ -86,6 +86,21 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
 .btn-cancel{padding:8px 18px;border-radius:6px;background:#F0EDE8;color:#1C1917;border:none;font-weight:700;font-size:13px;cursor:pointer}
 .toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);background:#1C1917;color:#fff;padding:10px 20px;border-radius:50px;font-size:13px;font-weight:600;opacity:0;transition:opacity .3s;pointer-events:none;z-index:200}
 .toast.show{opacity:1}
+
+/* Notification panel */
+.notif-panel{background:#fff;border-radius:10px;margin:0 20px 16px;padding:16px 18px;box-shadow:0 1px 3px rgba(0,0,0,.06);border-left:3px solid #E8571A}
+.notif-panel h3{font-size:13px;font-weight:700;color:#1C1917;margin-bottom:12px;display:flex;align-items:center;gap:6px}
+.notif-row{display:flex;gap:8px;align-items:flex-end;flex-wrap:wrap}
+.notif-field{display:flex;flex-direction:column;gap:3px}
+.notif-field label{font-size:11px;font-weight:600;color:#78716C}
+.notif-field input{padding:7px 10px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit;background:#FAFAF8}
+.notif-field input:focus{outline:none;border-color:#E8571A}
+.notif-field.title-f input{width:200px}
+.notif-field.body-f input{width:360px}
+.btn-send-notif{padding:8px 18px;border-radius:6px;background:#E8571A;color:#fff;border:none;font-weight:700;font-size:13px;cursor:pointer;white-space:nowrap;height:36px;align-self:flex-end}
+.btn-send-notif:hover{background:#D4460A}
+.btn-send-notif:disabled{opacity:.5;cursor:not-allowed}
+.notif-status{font-size:12px;margin-top:8px;min-height:18px;color:#78716C}
 .raw-text-modal{max-height:200px;overflow-y:auto;padding:8px;border:1px solid #EEE;border-radius:6px;background:#F7F5F2;font-size:11px;white-space:pre-wrap;word-break:break-word;font-family:monospace}
 
 /* Link Ops Tab */
@@ -109,6 +124,22 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
   <div class="stat"><div class="stat-val amber" id="s-logged">—</div><div class="stat-label">Pipeline logs</div></div>
   <div class="stat"><div class="stat-val red" id="s-filtered">—</div><div class="stat-label">Filtered out</div></div>
   <div class="stat"><div class="stat-val" id="s-clicks">—</div><div class="stat-label">Total clicks</div></div>
+</div>
+
+<div class="notif-panel">
+  <h3>⚡ Send Push Notification</h3>
+  <div class="notif-row">
+    <div class="notif-field title-f">
+      <label>Title</label>
+      <input type="text" id="notif-title" value="⚡ Zap." placeholder="⚡ Zap."/>
+    </div>
+    <div class="notif-field body-f">
+      <label>Message</label>
+      <input type="text" id="notif-body" placeholder="e.g. Massive sale on Myntra — up to 80% off!" maxlength="140"/>
+    </div>
+    <button class="btn-send-notif" onclick="sendNotification()">Send to all users</button>
+  </div>
+  <div class="notif-status" id="notif-status"></div>
 </div>
 
 <div class="tabs" style="background:#F7F5F2;border:none">
@@ -657,6 +688,46 @@ function showToast(msg) {
   t.textContent = msg;
   t.classList.add('show');
   setTimeout(() => t.classList.remove('show'), 2500);
+}
+
+async function sendNotification() {
+  const title = document.getElementById('notif-title').value.trim() || '⚡ Zap.';
+  const body  = document.getElementById('notif-body').value.trim();
+  const status = document.getElementById('notif-status');
+  const btn = document.querySelector('.btn-send-notif');
+
+  if (!body) { status.textContent = '⚠️ Message body is required.'; status.style.color='#B91C1C'; return; }
+
+  const adminKey = localStorage.getItem('zap_admin_key') || '';
+  btn.disabled = true;
+  status.style.color = '#78716C';
+  status.textContent = 'Sending…';
+
+  try {
+    const res = await fetch('/notify', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey },
+      body: JSON.stringify({ title, body }),
+    });
+    if (res.status === 403) {
+      const key = prompt('Enter admin API key:');
+      if (key) { localStorage.setItem('zap_admin_key', key); btn.disabled = false; sendNotification(); return; }
+      status.textContent = '❌ Invalid admin key.'; status.style.color='#B91C1C';
+    } else if (res.ok) {
+      const d = await res.json();
+      const sent = (d.expo || 0) + (d.fcm || 0);
+      status.textContent = `✅ Sent to ${sent} device${sent !== 1 ? 's' : ''} (${d.expo||0} Expo · ${d.fcm||0} FCM)`;
+      status.style.color = '#16A34A';
+      document.getElementById('notif-body').value = '';
+    } else {
+      status.textContent = `❌ Error ${res.status}: ${await res.text()}`;
+      status.style.color = '#B91C1C';
+    }
+  } catch(e) {
+    status.textContent = `❌ ${e.message}`;
+    status.style.color = '#B91C1C';
+  }
+  btn.disabled = false;
 }
 
 function esc(s) {
