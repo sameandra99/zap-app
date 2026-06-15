@@ -1,0 +1,43 @@
+module.exports = {
+  expo: {
+    name: "Zap",
+    slug: "zap-deals",
+    version: "1.0.0",
+    orientation: "portrait",
+    icon: "./assets/icon.png",
+    userInterfaceStyle: "light",
+    newArchEnabled: true,
+    splash: {
+      image: "./assets/splash-icon.png",
+      resizeMode: "contain",
+      backgroundColor: "#1C1917",
+    },
+    ios: {
+      supportsTablet: true,
+    },
+    android: {
+      adaptiveIcon: {
+        foregroundImage: "./assets/adaptive-icon.png",
+        backgroundColor: "#ffffff",
+      },
+      package: "com.zapdeals.app",
+      // EAS Build: $GOOGLE_SERVICES_JSON is set to the temp file path by EAS.
+      // Local dev: falls back to the file in the project root.
+      googleServicesFile: process.env.GOOGLE_SERVICES_JSON || "./google-services.json",
+    },
+    web: {
+      favicon: "./assets/favicon.png",
+    },
+    plugins: [
+      "expo-asset",
+      "@react-native-firebase/app",
+      "@react-native-firebase/analytics",
+      "@react-native-firebase/messaging",
+    ],
+    extra: {
+      eas: {
+        projectId: "cf611307-83c1-4269-b55b-87658b3b7dbf",
+      },
+    },
+  },
+};
