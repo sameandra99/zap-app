@@ -86,7 +86,7 @@ function seedClicks(id) {
   return 5 + (Math.abs(hash) % 66); // 5–70
 }
 
-export default function DealCard({ deal, onBuy }) {
+export default function DealCard({ deal, onBuy, highlighted = false }) {
   const [opening, setOpening] = React.useState(false);
 
   const rawClicks = deal.clicks || 0;
@@ -120,7 +120,7 @@ export default function DealCard({ deal, onBuy }) {
   if (hasImage) {
     // Image card — text left, image right
     return (
-      <View style={styles.card}>
+      <View style={[styles.card, highlighted && styles.cardHighlighted]}>
         <View style={styles.bodyWithImage}>
           <PlatformBadge platform={deal.platform} />
           <BoldText style={styles.copy} numberOfLines={4}>{deal.copy}</BoldText>
@@ -151,7 +151,7 @@ export default function DealCard({ deal, onBuy }) {
 
   // No-image card — full width text, clean layout
   return (
-    <View style={styles.card}>
+    <View style={[styles.card, highlighted && styles.cardHighlighted]}>
       <View style={styles.bodyFull}>
         <PlatformBadge platform={deal.platform} />
         <BoldText style={styles.copy} numberOfLines={3}>{deal.copy}</BoldText>
@@ -183,6 +183,15 @@ const cardBase = {
 
 const styles = StyleSheet.create({
   card: cardBase,
+  // Temporarily highlight a deal opened via push notification tap
+  cardHighlighted: {
+    borderWidth: 2,
+    borderColor: "#E8571A",
+    ...Platform.select({
+      ios: { shadowColor: "#E8571A", shadowOpacity: 0.25, shadowRadius: 8 },
+      android: { elevation: 6 },
+    }),
+  },
 
   // Image card — text left, image right
   bodyWithImage: {

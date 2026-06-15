@@ -544,6 +544,7 @@ REDIRECT_DOMAINS = {
     "dl.flipkart.com",
     "amzn.to",           # Official Amazon shortener — still needs resolving
     "ddime.in",          # DesiDime short link tracker — resolves to final product URL
+    "budgetsathi.com",   # Budget Sathi redirect service — follows to real product URL
 }
 
 def is_redirect_domain(url: str) -> bool:
@@ -1478,12 +1479,19 @@ def copy_fingerprint(copy: str) -> str:
 
 async def check_duplicate(sb, url: str, copy: str) -> bool:
     """
-    Check for duplicate deals using two strategies:
+    Check for duplicate deals within a 15-minute window using three strategies:
     1. Amazon ASIN match (catches full URL vs shortened URL)
-    2. Copy fingerprint match (catches same sale posted by multiple channels)
+    2. Base URL match (non-shortened, non-Amazon URLs)
+    3. Copy fingerprint match (catches same sale posted by multiple channels)
+
+    Only checks deals posted in the last 15 minutes to allow legitimate reposts.
     """
     try:
-        result = sb.table("deals").select("affiliate_url,copy").execute()
+        # Only check deals from the last 15 minutes
+        from datetime import timedelta
+        cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
+        result = sb.table("deals").select("affiliate_url,copy,created_at").gte("created_at", cutoff).execute()
+
         asin = extract_asin(url)
         base = get_base_url(url)
         fp = copy_fingerprint(copy)

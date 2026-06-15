@@ -29,10 +29,11 @@ function inferCategory(deal) {
   return "other";
 }
 
-export default function HomeScreen() {
+export default function HomeScreen({ initialDealId }) {
   const { deals, newDeals, loading, refreshing, error, refresh, acceptNewDeals, recordClick } = useDeals();
   const [activeCategory, setActiveCategory] = useState("All");
   const [menuOpen, setMenuOpen] = useState(false);
+  const [highlightedDealId, setHighlightedDealId] = useState(null);
   const listRef = useRef(null);
 
   const handleNewDealsBanner = () => {
@@ -40,6 +41,29 @@ export default function HomeScreen() {
     acceptNewDeals();
     listRef.current?.scrollToOffset({ offset: 0, animated: true });
   };
+
+  // When app opens from a notification tap, scroll to and briefly highlight
+  // the deal that was tapped.
+  useEffect(() => {
+    if (!initialDealId || !deals.length) return;
+    // Reset the category filter so the deal is guaranteed to be in the list
+    setActiveCategory("All");
+    setHighlightedDealId(initialDealId);
+
+    // Defer the scroll until after the list has re-rendered with "All"
+    const t = setTimeout(() => {
+      const idx = deals.findIndex((d) => String(d.id) === String(initialDealId));
+      if (idx === -1) return;
+      try {
+        listRef.current?.scrollToIndex({ index: idx, animated: true, viewPosition: 0.3 });
+      } catch (e) {
+        // scrollToIndex can throw if the row isn't measured yet — non-fatal
+      }
+    }, 350);
+
+    const clear = setTimeout(() => setHighlightedDealId(null), 3000);
+    return () => { clearTimeout(t); clearTimeout(clear); };
+  }, [initialDealId, deals]);
 
   const filteredDeals = deals.filter(deal => {
     if (activeCategory === "All") return true;
@@ -66,8 +90,20 @@ export default function HomeScreen() {
         ref={listRef}
         data={filteredDeals}
         keyExtractor={(item) => item.id}
+        onScrollToIndexFailed={(info) => {
+          // Row not yet measured — retry once after a short delay (RN-recommended)
+          setTimeout(() => {
+            try {
+              listRef.current?.scrollToIndex({ index: info.index, animated: true, viewPosition: 0.3 });
+            } catch (e) {}
+          }, 400);
+        }}
         renderItem={({ item }) => (
-          <DealCard deal={item} onBuy={recordClick} />
+          <DealCard
+            deal={item}
+            onBuy={recordClick}
+            highlighted={String(item.id) === String(highlightedDealId)}
+          />
         )}
         ListHeaderComponent={
           <View>

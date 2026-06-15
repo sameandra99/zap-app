@@ -28,9 +28,9 @@
     },
     "plugins": [
       "expo-asset",
-      "expo-notifications",
       "@react-native-firebase/app",
-      "@react-native-firebase/analytics"
+      "@react-native-firebase/analytics",
+      "@react-native-firebase/messaging"
     ],
     "extra": {
       "eas": {

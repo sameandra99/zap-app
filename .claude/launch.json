@@ -6,6 +6,19 @@
       "runtimeExecutable": "npx",
       "runtimeArgs": ["serve", "-p", "4321", "loot-deals"],
       "port": 4321
+    },
+    {
+      "name": "liftlog-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/sameandra/liftlog && npx expo start --web --port 8082"],
+      "port": 8082
+    }
+  ,{
+      "name": "export360-web",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd /Users/sameandra/export360/web && npm run dev"],
+      "port": 3001,
+      "autoPort": true
     }
   ]
 }
