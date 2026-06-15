@@ -50,3 +50,4 @@ Thumbs.db
 .vscode/
 .idea/
 *.swp
+loot-app-v2/google-services.json
