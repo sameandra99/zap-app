@@ -353,6 +353,42 @@ class TestAmazonImageFetch:
         assert len(result) > 2000, "Real product image should be > 2KB"
 
 
+class TestJunkImageMarkers:
+    """Regression guard: stock/UI-asset images must be filtered out.
+
+    Covers the bug where Myntra brand pages served a logo/rupee-coin
+    illustration and Flipkart served a 'batman-returns' theme asset as the
+    product image.
+    """
+
+    def test_known_stock_urls_are_marked_junk(self):
+        from pipeline.deal_pipeline import JUNK_IMAGE_URL_MARKERS
+        stock_urls = [
+            "https://constant.myntassets.com/www/data/portal/mlogo.png",
+            "https://constant.myntassets.com/pwa/assets/img/rupee_illustration.png",
+            "https://static-assets-web.flixcart.com/batman-returns/batman-returns/p/images/fkheaderlogo.svg",
+        ]
+        for url in stock_urls:
+            low = url.lower()
+            assert any(m in low for m in JUNK_IMAGE_URL_MARKERS), f"Stock URL not caught: {url}"
+
+    def test_real_product_urls_pass(self):
+        from pipeline.deal_pipeline import JUNK_IMAGE_URL_MARKERS
+        product_urls = [
+            "https://m.media-amazon.com/images/I/41ldxfF6iiL.jpg",
+            "https://assets.myntassets.com/h_1440,q_75,w_1080/v1/assets/images/2025/x.jpg",
+            "https://rukminim2.flixcart.com/image/832/832/abc/watch.jpeg",
+        ]
+        for url in product_urls:
+            low = url.lower()
+            assert not any(m in low for m in JUNK_IMAGE_URL_MARKERS), f"Product URL wrongly flagged: {url}"
+
+    def test_rupee_illustration_hash_blocklisted(self):
+        from pipeline.deal_pipeline import KNOWN_JUNK_IMAGE_HASHES
+        # The exact Myntra rupee-coin illustration that was leaking through
+        assert "0e8b6d9cdc679246ecb34ce4f60e8fc7" in KNOWN_JUNK_IMAGE_HASHES
+
+
 def test_smoke_all_imports():
     """Verify all critical functions can be imported (catches import errors)."""
     from pipeline.deal_pipeline import (

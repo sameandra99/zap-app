@@ -1018,7 +1018,31 @@ def record_pending_domain(sb, host: str, sample_url: str) -> bool:
 KNOWN_JUNK_IMAGE_HASHES = {
     "d892b0fb99817f5b5f19a7b05b56c186",  # Amazon UI sprite sheet (smile/prime/icons)
     "e70919d899a780b1ccbfe83c3182fa24",  # Myntra logo (constant.myntassets.com/.../mlogo.png)
+    "0e8b6d9cdc679246ecb34ce4f60e8fc7",  # Myntra rupee-coin illustration (pwa/assets/img)
 }
+
+# URL substrings that mark an image as a UI asset (logo/sprite/illustration/
+# placeholder) rather than a real product photo. Checked against the lowercased
+# image URL in fetch_og_image. The retailer CDN split is the key insight:
+#   • Myntra:   constant.myntassets.com = UI assets;  assets.myntassets.com = products
+#   • Flipkart: /www-static/ , rukminim*.flixcart.com/www/ = UI;  product imgs under /image/
+#   • Ajio:     /static/ , /content/ = UI;  product imgs under /p/ catalog paths
+# When in doubt we skip — a missing image is better than a wrong stock logo.
+JUNK_IMAGE_URL_MARKERS = (
+    "/images/g/",            # Amazon UI sprite path
+    "constant.myntassets",   # Myntra UI-asset CDN (logos, illustrations) — never products
+    "/pwa/assets/",          # Myntra PWA static assets
+    "illustr",               # rupee/empty-state illustrations
+    "static-assets-web.flixcart",  # Flipkart UI-asset CDN (logos, header, theme bundles)
+    "batman-returns",        # Flipkart static theme bundle path
+    "mlogo", "sprite", "/logo", "logo.", "placeholder", "/portal/",
+    "banner", "icon", "/static/", "default", "no-image", "noimage",
+)
+# Real product-image CDNs (allow-list reference; product imgs live under these):
+#   Amazon  → m.media-amazon.com/images/I/
+#   Myntra  → assets.myntassets.com/.../assets/images/
+#   Flipkart→ rukminim{1,2,3}.flixcart.com/image/
+#   Ajio    → assets.ajio.com/medias/ (but Ajio 403s datacenter scraping)
 
 # Self-healing detection: count how often each image hash is seen. The same
 # product image legitimately appears once per deal; a generic logo/placeholder
@@ -1362,7 +1386,7 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
             # 4. Actual product images in markup (img tags with alt="product" or in product divs)
             for match in re.finditer(r'<img[^>]+src=["\']([^"\']+)["\']', r.text):
                 src = match.group(1)
-                if any(skip in src.lower() for skip in ["logo", "banner", "icon", "brand", "sprite", "placeholder", "mlogo"]):
+                if any(skip in src.lower() for skip in JUNK_IMAGE_URL_MARKERS):
                     continue
                 img_urls.append(src)
 
@@ -1372,7 +1396,7 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
                     continue
                 # Skip URLs that are obviously logos/sprites/UI assets by path
                 low = img_url.lower()
-                if any(bad in low for bad in ["/images/g/", "mlogo", "sprite", "/logo", "logo.", "placeholder", "/portal/"]):
+                if any(bad in low for bad in JUNK_IMAGE_URL_MARKERS):
                     continue
 
                 try:
