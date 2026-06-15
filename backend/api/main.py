@@ -165,12 +165,43 @@ def register_device(data: dict):
 
 @app.post("/notify", dependencies=[Depends(_require_admin)])
 async def send_notification(data: dict):
-    """Send push notification — routes by token type:
-    - ExponentPushToken[...] → Expo push service
-    - Everything else (raw FCM token) → Firebase
+    """Send a push notification to every registered device.
+
+    Two modes:
+    - Pass `deal_id` → looks up the deal and builds a rich notification from it
+      (deal copy as body, platform-aware title, product image as big picture,
+      deal_id in the data payload for deep-linking on tap).
+    - Pass `title`/`body` directly → free-form message (image optional).
+
+    Routes by token type: ExponentPushToken[...] → Expo, everything else → FCM.
     """
-    title = data.get("title", "⚡ Zap.")
-    body = data.get("body", "")
+    deal_id   = data.get("deal_id")
+    title     = data.get("title")
+    body      = data.get("body")
+    image_url = data.get("image_url")
+    platform  = ""
+
+    # Deal mode: hydrate title/body/image from the stored deal
+    if deal_id:
+        try:
+            db = get_db()
+            res = db.table("deals").select("copy,platform,image_url").eq("id", deal_id).single().execute()
+            if res.data:
+                deal = res.data
+                body = body or deal.get("copy") or ""
+                image_url = image_url or deal.get("image_url")
+                platform = (deal.get("platform") or "").strip()
+            elif not body:
+                raise HTTPException(status_code=404, detail="Deal not found")
+        except HTTPException:
+            raise
+        except Exception as e:
+            print(f"[NOTIFY] Deal lookup failed: {type(e).__name__}: {str(e)[:80]}")
+
+    # Title: brand + platform context (e.g. "⚡ Amazon deal"), fallback to brand
+    if not title:
+        title = f"⚡ {platform.capitalize()} deal" if platform else "⚡ Zap."
+    body = body or ""
 
     if not device_tokens:
         return {"status": "no_devices"}
@@ -180,13 +211,20 @@ async def send_notification(data: dict):
     fcm_tokens  = [t for t in device_tokens if not t.startswith("ExponentPushToken[")]
 
     results = {"expo": 0, "fcm": 0}
+    data_payload = {"deal_id": str(deal_id)} if deal_id else {}
 
     # Send to Expo tokens via Expo push service
     if expo_tokens:
-        messages = [
-            {"to": token, "title": title, "body": body, "sound": "default"}
-            for token in expo_tokens
-        ]
+        def _expo_msg(token):
+            m = {
+                "to": token, "title": title, "body": body,
+                "sound": "default", "channelId": "deals",
+                "data": data_payload,
+            }
+            if image_url:
+                m["richContent"] = {"image": image_url}
+            return m
+        messages = [_expo_msg(token) for token in expo_tokens]
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.post(
@@ -206,16 +244,20 @@ async def send_notification(data: dict):
 
     # Send to raw FCM tokens via Firebase — batch via send_each() for speed
     if fcm_tokens and FIREBASE_ENABLED:
-        extra_data = {"deal_id": str(data["deal_id"])} if data.get("deal_id") else {}
         messages = [
             messaging.Message(
-                notification=messaging.Notification(title=title, body=body),
-                data=extra_data,
+                notification=messaging.Notification(
+                    title=title, body=body,
+                    image=image_url or None,  # big-picture in the expanded notification
+                ),
+                data=data_payload,
                 android=messaging.AndroidConfig(
                     priority="high",
+                    ttl=timedelta(hours=12),  # deals go stale fast — don't deliver late
                     notification=messaging.AndroidNotification(
                         sound="default",
                         channel_id="deals",
+                        image=image_url or None,
                     ),
                 ),
                 token=token,
