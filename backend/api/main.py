@@ -348,16 +348,16 @@ def post_log(data: dict):
 
 
 @app.get("/admin/logs")
-def get_logs(limit: int = 300):
-    """Pipeline logs — from in-memory store if available, else falls back to DB."""
+def get_logs(limit: int = 500):
+    """Pipeline logs — always read from the DB (the persistent source of truth).
+
+    The DB survives API restarts/deploys and holds the full history, so the
+    admin panel never loses recent activity. The in-memory store is only an
+    emergency fallback if the DB read fails.
+    """
     global pipeline_logs_store
 
-    # If we have live in-memory logs, use those (fast path)
-    if pipeline_logs_store:
-        logs = list(reversed(pipeline_logs_store))[:limit]
-        return {"logs": logs, "count": len(logs), "source": "live"}
-
-    # After a restart the in-memory store is empty — read from DB instead
+    # Always read from DB so the admin sees complete, deploy-persistent history
     try:
         db = get_db_admin()
         cutoff = (datetime.now(timezone.utc) - timedelta(hours=48)).isoformat()
@@ -401,8 +401,10 @@ def get_logs(limit: int = 300):
             })
         return {"logs": logs, "count": len(logs), "source": "db"}
     except Exception as e:
-        print(f"[LOGS] DB fallback failed: {e}")
-        return {"logs": [], "count": 0, "source": "error", "error": str(e)}
+        print(f"[LOGS] DB read failed, falling back to in-memory: {e}")
+        # Emergency fallback only — in-memory store is partial and resets on deploy
+        logs = list(reversed(pipeline_logs_store))[:limit]
+        return {"logs": logs, "count": len(logs), "source": "memory-fallback"}
 
 
 @app.get("/admin/logs/archive")

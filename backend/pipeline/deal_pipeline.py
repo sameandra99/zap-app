@@ -122,6 +122,8 @@ ALWAYS ACCEPT these brand × category combinations (examples of (a)):
   HAIRCARE (salon/professional only): TRESemme, Schwarzkopf, Streax, Livon, Matrix, L'Oreal Professionnel
   PERSONAL CARE (grooming tools/devices): Gillette, Braun, Philips (grooming), Oral-B
   HOME/KITCHEN (accept at 40%+ off OR low absolute price — even "basic" items like cookware, toaster, kettle, mixer, cooker count): Prestige, Hawkins, Pigeon, Bergner, Wonderchef, Borosil, Butterfly, Milton, Cello, Tupperware, Bajaj, Philips, Morphy Richards, Bosch, IFB, Crompton, Usha, Havells, Faber, Glen, Preethi, Sujata, Inalsa, Agaro, Vidiem, Stovekraft, Greenchef, Nirlep, Amazon Brand (Solimo/Presto), Vasa, Kuvings
+  APPLIANCES (branded air coolers, water purifiers, fans, ACs, geysers, washing machines, refrigerators, microwaves — accept at a clearly good price or 30%+ off): Symphony, Voltas, Blue Star, Livpure, Kent, Aquaguard, Pureit, Orient, Atomberg, V-Guard, Hindware, Lloyd, Godrej, Whirlpool, Haier, Panasonic, Daikin, Carrier, Hitachi, AO Smith, Racold
+    NOTE: Livpure, Kent, Symphony etc. are RECOGNISED appliance brands — NEVER label them "low-value mass-market". A Livpure/Symphony cooler or a Kent purifier at a good price IS shareable.
   FITNESS: Boldfit, Strauss, Nivia, Cosco, Decathlon
   WATCHES: Titan, Fastrack, Timex, Fossil, Casio, Seiko, Daniel Wellington
 
@@ -1420,6 +1422,88 @@ async def _fetch_flipkart_image(url: str) -> Optional[bytes]:
     return None
 
 
+# Generic words that don't constitute a product name — used to detect messages
+# whose product name lives only in the link preview (e.g. "Grab 398 : <link>").
+_NON_PRODUCT_WORDS = {
+    "grab", "loot", "deal", "deals", "offer", "offers", "buy", "now", "price",
+    "off", "rs", "at", "only", "just", "flat", "upto", "up", "to", "the", "best",
+    "good", "today", "link", "here", "sale", "extra", "get", "shop", "online",
+    "lowest", "cheapest", "mrp", "discount", "save", "free", "new", "hot",
+}
+
+
+def _is_title_less(raw_text: str) -> bool:
+    """True if the message text has no real product name — only price/link/filler.
+
+    Catches posts like "Grab 398 : https://fkrt.cc/..." or "Loot Deal ₹299 <link>"
+    where the actual product is only in the link's rich preview, which the LLM
+    never sees. For these we fetch the destination page title to give it context.
+    """
+    if not raw_text:
+        return True
+    t = re.sub(r'\[[^\]]*\]\([^)]*\)', ' ', raw_text)   # strip markdown links
+    t = re.sub(r'https?://\S+', ' ', t)                  # strip raw URLs
+    words = re.findall(r"[a-zA-Z]{3,}", t.lower())
+    meaningful = [w for w in words if w not in _NON_PRODUCT_WORDS]
+    return len(meaningful) < 2
+
+
+async def fetch_product_title(url: str) -> Optional[str]:
+    """Fetch a clean product title from the destination page (og:title / <title>).
+
+    Used to recover deals whose message text has no product name — the name is
+    only in the link's preview card. Returns a cleaned title or None.
+    """
+    if not url:
+        return None
+    try:
+        if is_redirect_domain(url):
+            url = await resolve_url(url)
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
+            "Accept": "text/html,application/xhtml+xml",
+            "Accept-Language": "en-IN,en;q=0.9",
+        }
+        async with httpx.AsyncClient(timeout=8, follow_redirects=True) as client:
+            r = await client.get(url, headers=headers)
+            if r.status_code != 200:
+                return None
+        title = None
+        for pattern in (
+            r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
+            r'<meta[^>]+content=["\']([^"\']+)["\'][^>]+property=["\']og:title["\']',
+            r'<title[^>]*>([^<]+)</title>',
+        ):
+            m = re.search(pattern, r.text, re.IGNORECASE)
+            if m:
+                title = m.group(1).strip()
+                break
+        if not title:
+            return None
+        # Strip retailer suffixes: "...: Buy X Online at Flipkart.com", "X : Amazon.in"
+        title = re.split(
+            r'\s*[:|\-–]\s*(?:buy|price|amazon|flipkart|myntra|ajio|nykaa|shop|online)\b',
+            title, maxsplit=1, flags=re.IGNORECASE,
+        )[0].strip()
+        # Strip trailing boilerplate not preceded by a separator
+        # (e.g. "...Shelf Organizers Price in India", "...Online at Best Price")
+        title = re.sub(
+            r'\s+(?:price in india|online at best price|at best price|price|online).*$',
+            '', title, flags=re.IGNORECASE,
+        ).strip()
+        title = re.sub(r'\s+', ' ', title)
+        low = title.lower()
+        if len(title) < 6 or any(b in low for b in (
+            "page not found", "404", "access denied", "robot",
+            "are you a human", "just a moment",
+        )):
+            return None
+        return title[:160]
+    except Exception as e:
+        print(f"  ℹ️  Title fetch failed: {type(e).__name__}")
+        return None
+
+
 async def save_to_db(deal: dict, image_bytes: Optional[bytes]):
     """Save processed deal to Supabase."""
     try:
@@ -1725,6 +1809,18 @@ async def process_message(
 
         # Pre-extract URLs so LLM doesn't miss them in Markdown syntax
         extracted_urls = extract_urls_from_text(raw_text)
+
+        # Recover "title-less" posts: when the message text has no product name
+        # (e.g. "Grab 398 : <link>") the product is only in the link preview,
+        # which the LLM can't see. Fetch the destination page title and inject it.
+        if _is_title_less(raw_text) and extracted_urls:
+            product_url_for_title = pick_best_url(extracted_urls, source_channel=source_channel)
+            title = await fetch_product_title(product_url_for_title) if product_url_for_title else None
+            if title:
+                print(f"  🏷️  Recovered product title from link: {title[:70]}")
+                raw_text = f"{title}\n{raw_text}"
+                copy_quality, quality_reasons = score_copy_quality(raw_text)
+
         result = await call_llm(raw_text, extracted_urls, copy_quality_score=copy_quality)
         is_valid = result.get("is_valid_deal", False)
         reason = result.get("reason", "")
