@@ -183,6 +183,19 @@ async def poll_channel(client, channel_entity, channel_name: str, processed_ids:
             sub_deals = split_multi_deal_message(text)
 
             if sub_deals:
+                # Deduplicate sub-deals that share the same URL (same message, two line-items
+                # pointing to the same product — e.g. "37% off: url" + "₹1,899: url")
+                seen_urls: set = set()
+                unique_sub_deals = []
+                for sub in sub_deals:
+                    u = sub.get("url", "")
+                    if u and u in seen_urls:
+                        print(f"      🔁 Skipping duplicate sub-deal URL: {u[:60]}")
+                        continue
+                    seen_urls.add(u)
+                    unique_sub_deals.append(sub)
+                sub_deals = unique_sub_deals
+
                 print(f"      📦 Multi-deal message — splitting into {len(sub_deals)} posts")
                 for idx, sub in enumerate(sub_deals):
                     await process_message(

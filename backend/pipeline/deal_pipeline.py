@@ -1497,19 +1497,28 @@ def copy_fingerprint(copy: str) -> str:
 async def check_duplicate(sb, url: str, copy: str) -> bool:
     """
     Check for duplicate deals within a 15-minute window using three strategies:
-    1. Amazon ASIN match (catches full URL vs shortened URL)
-    2. Base URL match (non-shortened, non-Amazon URLs)
+    1. Amazon ASIN direct DB query (most reliable — avoids Python-loop timing issues)
+    2. Base URL match (non-Amazon URLs — canonical clean URL comparison)
     3. Copy fingerprint match (catches same sale posted by multiple channels)
 
     Only checks deals posted in the last 15 minutes to allow legitimate reposts.
     """
     try:
-        # Only check deals from the last 15 minutes
-        from datetime import timedelta
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
-        result = sb.table("deals").select("affiliate_url,copy,created_at").gte("created_at", cutoff).execute()
 
         asin = extract_asin(url)
+
+        # 1. Amazon ASIN — direct DB query (more reliable than Python-loop comparison,
+        #    handles timing edge cases where the row was just committed)
+        if asin:
+            asin_result = sb.table("deals").select("id").gte("created_at", cutoff).like("affiliate_url", f"%{asin}%").execute()
+            if asin_result.data:
+                print(f"  🔎 Duplicate ASIN {asin} found in DB")
+                return True
+
+        # Fetch recent deals for URL + copy checks
+        result = sb.table("deals").select("affiliate_url,copy").gte("created_at", cutoff).execute()
+
         base = get_base_url(url)
         fp = copy_fingerprint(copy)
 
@@ -1517,12 +1526,7 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
             existing_url = row.get("affiliate_url", "") or ""
             existing_copy = row.get("copy", "") or ""
 
-            # 1. Amazon ASIN match
-            existing_asin = extract_asin(existing_url)
-            if asin and existing_asin and asin == existing_asin:
-                return True
-
-            # 2. Base URL match (non-shortened, non-Amazon)
+            # 2. Base URL match (strips query params — canonical URLs for non-Amazon)
             if base and get_base_url(existing_url) == base:
                 return True
 
@@ -1531,7 +1535,8 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
                 return True
 
         return False
-    except Exception:
+    except Exception as e:
+        print(f"  ⚠️  check_duplicate failed ({type(e).__name__}: {str(e)[:80]}) — allowing through")
         return False
 
 
