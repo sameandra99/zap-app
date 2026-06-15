@@ -15,7 +15,7 @@ import hashlib
 import httpx
 from typing import Optional
 from urllib.parse import urlparse, parse_qsl
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from pathlib import Path
 
