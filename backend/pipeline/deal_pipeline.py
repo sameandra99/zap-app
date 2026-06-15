@@ -1614,25 +1614,28 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
     try:
         cutoff = (datetime.now(timezone.utc) - timedelta(minutes=15)).isoformat()
 
-        asin = extract_asin(url)
-
-        # 1. Amazon ASIN — direct DB query (more reliable than Python-loop comparison,
-        #    handles timing edge cases where the row was just committed)
-        if asin:
-            asin_result = sb.table("deals").select("id").gte("created_at", cutoff).like("affiliate_url", f"%{asin}%").execute()
-            if asin_result.data:
-                print(f"  🔎 Duplicate ASIN {asin} found in DB")
-                return True
-
-        # Fetch recent deals for URL + copy checks
+        # ONE query: fetch recent deals, then match all three ways in Python.
+        # (We previously did a separate `.like("affiliate_url","%ASIN%")` query,
+        # but a leading-wildcard LIKE can't use an index → full table scan →
+        # intermittent 500/timeout. When it threw, the whole function fell into
+        # `except` and returned False, silently disabling dedup for EVERY Amazon
+        # deal. The recent-rows window is small, so in-memory matching is both
+        # faster and reliable.)
         result = sb.table("deals").select("affiliate_url,copy").gte("created_at", cutoff).execute()
 
+        asin = extract_asin(url)
         base = get_base_url(url)
         fp = copy_fingerprint(copy)
 
         for row in result.data:
             existing_url = row.get("affiliate_url", "") or ""
             existing_copy = row.get("copy", "") or ""
+
+            # 1. Amazon ASIN match (catches short link vs full URL — both canonicalize
+            #    to /dp/{ASIN}, but compare ASINs directly to be safe)
+            if asin and extract_asin(existing_url) == asin:
+                print(f"  🔎 Duplicate ASIN {asin}")
+                return True
 
             # 2. Base URL match (strips query params — canonical URLs for non-Amazon)
             if base and get_base_url(existing_url) == base:
