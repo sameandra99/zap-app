@@ -1478,18 +1478,24 @@ def get_base_url(url: str) -> str:
 
 def copy_fingerprint(copy: str) -> str:
     """
-    Generate a fingerprint from deal copy to catch same-deal reposts.
-    Extracts: discount %, brand/key nouns, normalises whitespace.
-    e.g. 'HRX Footwear up to 89% off' → hash of 'hrx footwear 89'
+    Generate a fingerprint from deal copy to catch same-deal reposts across channels.
+
+    Uses sorted meaningful words so order/phrasing variation doesn't break matching:
+    "H&M clothing, up to 70% off" and "H&M at Myntra, 70% off + extra 20%"
+    both produce the same fingerprint.
     """
     if not copy:
         return ""
     text = copy.lower()
-    # Extract discount percentage
-    pct = re.findall(r"(\d+)%", text)
-    # Extract first 4 meaningful words (skip stop words)
-    stop = {"up","to","off","the","a","an","and","or","for","at","on","in","get","buy","now","with","use","from"}
-    words = [w for w in re.findall(r"[a-z0-9₹]+", text) if w not in stop][:4]
+    # Extract all discount percentages (up to 3)
+    pct = re.findall(r"(\d+)%", text)[:3]
+    # Extract meaningful words: skip stop words and single-char tokens (h, m, etc.)
+    stop = {"up","to","off","the","a","an","and","or","for","at","on","in","get",
+            "buy","now","with","use","from","extra","also","just","only","flat"}
+    words = sorted(
+        w for w in re.findall(r"[a-z0-9₹]+", text)
+        if w not in stop and len(w) > 1
+    )[:6]
     key = " ".join(words + pct)
     return hashlib.md5(key.encode()).hexdigest()
 
@@ -1600,8 +1606,10 @@ def is_generic_sale_announcement(text: str) -> bool:
     ]
     generic_score = sum(1 for p in generic_patterns if re.search(p, text, re.IGNORECASE))
 
-    # If it looks generic (2+ generic signals) AND has no specific price — skip it
-    if generic_score >= 2 and not has_specific_price and not has_product_name:
+    # "Brand + category + up to X% off" with no specific price or product → generic.
+    # e.g. "H&M clothing, up to 70% off + extra 20% off" — brand sale, not a deal.
+    # One generic signal is enough when there's nothing specific to anchor it.
+    if generic_score >= 1 and not has_specific_price and not has_product_name:
         return True
 
     return False
