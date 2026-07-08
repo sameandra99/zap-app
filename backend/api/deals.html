@@ -9,29 +9,32 @@
 %%GA_BLOCK%%
 <style>
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
-body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F7F5F2;color:#1C1917;-webkit-font-smoothing:antialiased;min-height:100vh}
-.page{max-width:680px;margin:0 auto;padding-bottom:56px}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica Neue",Arial,sans-serif;background:#F7F5F2;color:#1C1917;-webkit-font-smoothing:antialiased;min-height:100vh}
+.page{max-width:600px;margin:0 auto;padding-bottom:32px}
 
-/* Header */
-.header{padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between}
-.logo{display:flex;align-items:center;gap:8px}
-.logo-bolt{background:#E8571A;border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
-.logo-text{font-size:18px;font-weight:900;color:#1C1917;letter-spacing:-0.3px}
+/* Header — logo + hamburger only (matches app) */
+.header{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 12px}
+.logo{display:flex;align-items:center;gap:7px}
+.logo-bolt{background:#E8571A;border-radius:8px;width:33px;height:33px;display:flex;align-items:center;justify-content:center;font-size:18px;line-height:1;flex-shrink:0}
+.logo-text{font-size:23px;font-weight:800;color:#1C1917;letter-spacing:-0.5px;line-height:1}
 .logo-text span{color:#E8571A}
-.live-dot{display:flex;align-items:center;gap:5px;font-size:12px;color:#A8A29E;font-weight:500}
-.live-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:#16A34A;animation:pulse 2s infinite;flex-shrink:0}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* Hamburger — 3 bars, middle shorter, right-aligned (matches app) */
+.hamburger{background:none;border:none;cursor:pointer;padding:4px;display:flex;flex-direction:column;align-items:flex-end;gap:5px}
+.hamburger span{display:block;width:20px;height:2px;background:#1C1917;border-radius:2px}
+.hamburger span:nth-child(2){width:14px}
 
 /* Greeting */
-.greeting{padding:14px 20px 16px}
-.greeting-main{font-size:24px;font-weight:800;color:#1C1917;letter-spacing:-0.3px}
+.greeting{padding:4px 20px 14px}
+.greeting-main{font-size:22px;font-weight:800;color:#1C1917;letter-spacing:-0.3px;line-height:1.2}
 .greeting-sub{font-size:14px;color:#78716C;margin-top:3px;font-weight:500}
 
-.divider{height:1px;background:#ECE7E0;margin:0 20px}
+/* Divider */
+.divider{height:1px;background:#ECE7E0;margin:4px 20px 16px}
 
-/* Tabs */
-.tabs-wrap{position:sticky;top:0;background:#F7F5F2;z-index:10;padding:14px 0 12px}
-.tabs{display:flex;gap:8px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
+/* Tabs — scroll with header (not sticky, matches app) */
+.tabs-wrap{margin-bottom:12px}
+.tabs{display:flex;gap:8px;padding:0 24px 0 16px;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tab{flex-shrink:0;padding:8px 14px;border-radius:50px;background:#EEEBE6;border:none;font-size:15px;font-weight:600;color:#78716C;cursor:pointer;font-family:inherit;transition:background .15s,color .15s;white-space:nowrap}
 .tab.active{background:#E8571A;color:#fff;font-weight:700}
@@ -46,11 +49,11 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 /* Feed */
 .feed{display:flex;flex-direction:column;gap:9px;padding:0 16px}
 
-/* Card */
-.card{background:#fff;border-radius:16px;display:flex;flex-direction:row;overflow:hidden;border:2px solid transparent;box-shadow:0 1px 4px rgba(0,0,0,.06);transition:box-shadow .2s,transform .1s}
+/* Card — matches app DealCard */
+.card{background:#fff;border-radius:16px;display:flex;flex-direction:row;overflow:hidden;border:2px solid transparent;box-shadow:0 1px 6px rgba(0,0,0,.06);transition:box-shadow .2s,transform .1s}
 .card:active{transform:scale(.99)}
-@media(hover:hover){.card:hover{box-shadow:0 4px 18px rgba(0,0,0,.10)}}
-.card-body{flex:1;padding:13px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+@media(hover:hover){.card:hover{box-shadow:0 4px 16px rgba(0,0,0,.09)}}
+.card-body{flex:1;padding:11px 13px;display:flex;flex-direction:column;justify-content:center;min-width:0}
 .card-img-wrap{flex-shrink:0;width:116px;height:116px;align-self:center;margin-right:12px;border-radius:10px;overflow:hidden;background:#F5F3EF;display:flex;align-items:center;justify-content:center}
 .card-img{width:116px;height:116px;object-fit:cover;display:block}
 .card-img-placeholder{font-size:32px}
@@ -58,7 +61,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 /* Platform */
 .platform-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
 .platform-logo{width:18px;height:18px;border-radius:4px;object-fit:contain;flex-shrink:0;display:block}
-.platform-logo-fallback{width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;flex-shrink:0}
+.platform-logo-fallback{width:17px;height:17px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;flex-shrink:0}
 .platform-name{font-size:12px;font-weight:700;color:#57534E;letter-spacing:.1px}
 
 /* Title */
@@ -66,18 +69,18 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 
 /* Price */
 .price-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
-.price{font-size:24px;font-weight:800;color:#1C1917;letter-spacing:-.5px;line-height:1}
-.mrp{font-size:13px;color:#A8A29E;text-decoration:line-through;align-self:flex-end;margin-bottom:1px}
-.disc-badge{background:#16A34A;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:5px;letter-spacing:.2px}
+.price{font-size:26px;font-weight:800;color:#1C1917;letter-spacing:-.5px;line-height:1}
+.mrp{font-size:13px;color:#A8A29E;text-decoration:line-through;align-self:flex-end;margin-bottom:2px}
+.disc-badge{background:#16A34A;color:#fff;font-size:11px;font-weight:800;padding:2.5px 7px;border-radius:5px;letter-spacing:.2px}
 
 /* Meta */
-.card-meta{font-size:12px;color:#A8A29E;margin-bottom:10px}
+.card-meta{font-size:12px;color:#A8A29E;font-weight:500;margin-bottom:10px}
 .meta-popular{color:#B45309;font-weight:700}
 
-/* CTA */
-.cta{display:inline-block;background:#E8E3DC;border-radius:9px;padding:7px 16px;font-size:13px;font-weight:600;color:#44403C;letter-spacing:.2px;text-decoration:none;transition:background .15s;align-self:flex-start}
-.cta:hover{background:#D6CFC8}
-.cta:active{background:#CCC5BD}
+/* CTA — warm grey, matches app (price stays the hero) */
+.cta{display:inline-flex;align-items:center;justify-content:center;min-width:120px;background:#E8E3DC;border-radius:9px;padding:7px 16px;font-size:13px;font-weight:600;color:#44403C;letter-spacing:.2px;text-decoration:none;transition:background .15s;align-self:flex-start}
+.cta:hover{background:#DED8D0}
+.cta:active{background:#D6CFCA}
 
 /* Load more */
 .load-more-wrap{display:flex;justify-content:center;padding:24px 16px 0}
@@ -89,7 +92,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .empty{text-align:center;padding:60px 20px;color:#A8A29E}
 .empty-icon{font-size:40px;margin-bottom:12px}
 .empty-title{font-size:16px;font-weight:700;color:#78716C;margin-bottom:6px}
-.empty-sub{font-size:14px}
+.empty-sub{font-size:13px}
 
 /* Skeleton */
 .skeleton{background:#fff;border-radius:16px;height:120px;overflow:hidden;position:relative}
@@ -97,44 +100,37 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 @keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
 
 /* Footer */
-.footer{text-align:center;padding:32px 20px 0;font-size:12px;color:#A8A29E}
-.footer a{color:#A8A29E;text-decoration:none}
+.footer{text-align:center;padding:28px 20px 0;font-size:11px;color:#C8C3BC}
+.footer a{color:#C8C3BC;text-decoration:none}
 .footer a:hover{color:#78716C}
 
-/* Hamburger */
-.hamburger{background:none;border:none;cursor:pointer;padding:6px;display:flex;flex-direction:column;gap:5px;border-radius:6px;transition:background .15s}
-.hamburger:hover{background:#ECE7E0}
-.hamburger span{display:block;width:20px;height:2px;background:#44403C;border-radius:2px}
-
-/* Drawer overlay */
-.menu-overlay{position:fixed;inset:0;background:rgba(28,25,23,.4);z-index:90;opacity:0;pointer-events:none;transition:opacity .25s}
+/* Hamburger drawer */
+.menu-overlay{position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:90;opacity:0;pointer-events:none;transition:opacity .25s}
 .menu-overlay.open{opacity:1;pointer-events:auto}
-
-/* Slide-in drawer */
-.menu-drawer{position:fixed;top:0;right:-310px;width:280px;max-width:85vw;height:100vh;background:#FDFCFB;z-index:100;transition:right .28s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;overflow-y:auto;box-shadow:-4px 0 24px rgba(28,25,23,.12)}
+.menu-drawer{position:fixed;top:0;right:-320px;width:300px;max-width:86vw;height:100vh;background:#fff;z-index:100;transition:right .28s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;overflow-y:auto;box-shadow:-4px 0 28px rgba(0,0,0,.14)}
 .menu-drawer.open{right:0}
-.menu-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #ECE7E0}
-.menu-close{background:none;border:none;cursor:pointer;font-size:20px;color:#A8A29E;line-height:1;padding:2px 6px;border-radius:5px;transition:color .15s}
+.menu-head{display:flex;align-items:center;justify-content:space-between;padding:16px 20px 14px;border-bottom:1px solid #F5F3EF}
+.menu-head-title{font-size:16px;font-weight:700;color:#1C1917}
+.menu-close{background:none;border:none;cursor:pointer;font-size:16px;color:#A8A29E;font-weight:600;line-height:1;padding:4px 6px}
 .menu-close:hover{color:#1C1917}
-.menu-list{list-style:none;padding:10px 0;flex:1}
-.menu-item{display:flex;align-items:center;gap:12px;padding:13px 20px;font-size:15px;font-weight:600;color:#292524;text-decoration:none;transition:background .15s}
-.menu-item:hover{background:#F5F3EF}
-.menu-item-icon{width:34px;height:34px;border-radius:9px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
-.menu-divider{height:1px;background:#ECE7E0;margin:6px 20px}
-.menu-footer{padding:16px 20px;font-size:12px;color:#A8A29E}
+.menu-item{display:flex;align-items:center;padding:13px 20px;text-decoration:none;border-bottom:1px solid #F5F3EF;transition:background .12s}
+.menu-item:hover{background:#FAF8F5}
+.menu-item-icon{font-size:20px;width:36px;flex-shrink:0}
+.menu-item-text{flex:1;min-width:0}
+.menu-item-label{display:block;font-size:14px;font-weight:600;color:#1C1917}
+.menu-item-sub{display:block;font-size:12px;color:#A8A29E;margin-top:1px}
+.menu-item-chevron{font-size:20px;color:#C8C3BC;font-weight:300}
+.menu-version{text-align:center;font-size:11px;color:#C8C3BC;margin-top:20px;padding:0 20px 24px}
 
 /* Desktop */
 @media(min-width:640px){
-  .header{padding:28px 24px 0}
-  .greeting{padding:16px 24px 18px}
-  .divider{margin:0 24px}
-  .tabs{padding:0 20px}
-  .feed{padding:0 20px}
-  .load-more-wrap{padding:28px 20px 0}
-  .greeting-main{font-size:28px}
-  .price{font-size:26px}
-  .card-img-wrap{width:128px;height:128px}
-  .card-img{width:128px;height:128px}
+  .page{padding-bottom:40px}
+  .header{padding:24px 24px 12px}
+  .greeting{padding:4px 24px 14px}
+  .divider{margin:4px 24px 16px}
+  .tabs{padding:0 24px}
+  .feed{padding:0 24px}
+  .load-more-wrap{padding:28px 24px 0}
 }
 </style>
 </head>
@@ -146,28 +142,30 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 <!-- Slide-in drawer -->
 <nav class="menu-drawer" id="menu-drawer" aria-label="Site menu">
   <div class="menu-head">
-    <div class="logo">
-      <div class="logo-bolt">⚡</div>
-      <div class="logo-text">Super <span>Deals</span></div>
-    </div>
+    <div class="menu-head-title">Menu</div>
     <button class="menu-close" id="menu-close" aria-label="Close menu">✕</button>
   </div>
-  <ul class="menu-list">
-    <li><a href="https://play.google.com/store/apps/details?id=com.zapdeals.app" target="_blank" rel="noopener" class="menu-item">
-      <span class="menu-item-icon">📱</span>Download the App
-    </a></li>
-    <li><a href="#" class="menu-item" id="tg-link">
-      <span class="menu-item-icon">📢</span>Join Telegram Channel
-    </a></li>
-    <div class="menu-divider"></div>
-    <li><a href="/privacy" class="menu-item">
-      <span class="menu-item-icon">🔒</span>Privacy Policy
-    </a></li>
-    <li><a href="mailto:hello@super-deals.in" class="menu-item">
-      <span class="menu-item-icon">✉️</span>Contact Us
-    </a></li>
-  </ul>
-  <div class="menu-footer">© 2025 Super Deals · super-deals.in</div>
+  <a href="https://play.google.com/store/apps/details?id=com.zapdeals.app" target="_blank" rel="noopener" class="menu-item">
+    <span class="menu-item-icon">📱</span>
+    <span class="menu-item-text"><span class="menu-item-label">Download the App</span><span class="menu-item-sub">Get deals on your phone</span></span>
+    <span class="menu-item-chevron">›</span>
+  </a>
+  <a href="#" class="menu-item" id="tg-link">
+    <span class="menu-item-icon">📣</span>
+    <span class="menu-item-text"><span class="menu-item-label">Join Telegram Channel</span><span class="menu-item-sub">Deals the moment they drop</span></span>
+    <span class="menu-item-chevron">›</span>
+  </a>
+  <a href="/privacy" class="menu-item">
+    <span class="menu-item-icon">🔒</span>
+    <span class="menu-item-text"><span class="menu-item-label">Privacy Policy</span><span class="menu-item-sub">How we handle your data</span></span>
+    <span class="menu-item-chevron">›</span>
+  </a>
+  <a href="mailto:hello@super-deals.in?subject=Feedback" class="menu-item">
+    <span class="menu-item-icon">💬</span>
+    <span class="menu-item-text"><span class="menu-item-label">Send Feedback</span><span class="menu-item-sub">Help us get better</span></span>
+    <span class="menu-item-chevron">›</span>
+  </a>
+  <div class="menu-version">Super Deals · Made in India 🇮🇳</div>
 </nav>
 
 <div class="page">
@@ -176,12 +174,9 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
       <div class="logo-bolt">⚡</div>
       <div class="logo-text">Super <span>Deals</span></div>
     </div>
-    <div style="display:flex;align-items:center;gap:12px">
-      <div class="live-dot">Live deals</div>
-      <button class="hamburger" id="hamburger" aria-label="Open menu">
-        <span></span><span></span><span></span>
-      </button>
-    </div>
+    <button class="hamburger" id="hamburger" aria-label="Open menu">
+      <span></span><span></span><span></span>
+    </button>
   </div>
 
   <div class="greeting">
