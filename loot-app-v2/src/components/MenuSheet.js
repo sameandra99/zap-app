@@ -25,7 +25,8 @@ const MENU_ITEMS = [
     label: "Share Zap.",
     sub: "Tell a friend about us",
     onPress: () => Share.share({
-      message: "Check out Zap — India's fastest deal feed. Best deals across Amazon, Flipkart, Myntra and more, handpicked every hour. Download now!",
+      message: "Check out Zap — loot the best deals & lowest prices across Amazon, Flipkart, Myntra and more, handpicked every day. Stop paying full price. Download now: https://play.google.com/store/apps/details?id=com.zapdeals.app",
+      url: "https://play.google.com/store/apps/details?id=com.zapdeals.app",
     }),
   },
   {
@@ -33,11 +34,12 @@ const MENU_ITEMS = [
     label: "Rate Us",
     sub: "Enjoying Zap? Let us know",
     onPress: () => {
-      // Replace with actual Play Store / App Store URL once live
       const url = Platform.OS === "android"
         ? "market://details?id=com.zapdeals.app"
-        : "itms-apps://itunes.apple.com/app/idXXXXXXXXX";
-      Linking.openURL(url).catch(() => {});
+        : "https://play.google.com/store/apps/details?id=com.zapdeals.app";
+      Linking.openURL(url).catch(() =>
+        Linking.openURL("https://play.google.com/store/apps/details?id=com.zapdeals.app")
+      );
     },
   },
   {

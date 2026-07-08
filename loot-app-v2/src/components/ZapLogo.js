@@ -5,8 +5,10 @@ import { View, Text, StyleSheet } from "react-native";
  * Zap logo — lightning bolt glyph + wordmark
  * Uses pure RN primitives, no SVG dependency needed
  */
-export default function ZapLogo({ size = "md" }) {
-  const scale = size === "lg" ? 1.4 : size === "sm" ? 0.75 : 1;
+export default function ZapLogo({ size = "md", scale: scaleProp }) {
+  const scale = scaleProp != null
+    ? scaleProp
+    : size === "lg" ? 1.4 : size === "sm" ? 0.75 : 1;
 
   return (
     <View style={styles.row}>

@@ -11,6 +11,7 @@ import re
 import sys
 import time as _time
 import traceback
+from collections import deque
 from typing import Optional, Set
 from pathlib import Path
 from dotenv import load_dotenv
@@ -21,9 +22,19 @@ from datetime import datetime, timezone, timedelta
 
 load_dotenv(Path(__file__).parent.parent / ".env")
 
-API_ID   = int(os.environ["TELEGRAM_API_ID"])
-API_HASH = os.environ["TELEGRAM_API_HASH"]
-PHONE    = os.environ["TELEGRAM_PHONE"]
+
+def _require_env(name: str) -> str:
+    """Fail fast with a clear message instead of a bare KeyError at import."""
+    val = os.environ.get(name)
+    if not val:
+        print(f"❌ Missing required environment variable: {name}")
+        sys.exit(1)
+    return val
+
+
+API_ID   = int(_require_env("TELEGRAM_API_ID"))
+API_HASH = _require_env("TELEGRAM_API_HASH")
+PHONE    = _require_env("TELEGRAM_PHONE")
 
 SESSION_STRING = os.environ.get("TELEGRAM_SESSION_STRING")
 if SESSION_STRING:
@@ -55,7 +66,20 @@ CHANNELS = [
     "desidime",                      # India's largest deals community
     "icoolzTricks",                  # Electronics + multi-category deals
     "Loot_Offers_Sale",              # General deals & offers
+    "tech24deals",                   # Tech deals
+    "Deals_Offerzone_Loots",
+    "dealdost",
+    "RaredealsX",
+    "Jp_Loot_Deals",
+    "iamprasadtech",
 ]
+
+# Private/invite-only channels (no public @username) — resolved by numeric ID.
+# The dict key becomes the source_channel label stored in DB.
+PRIVATE_CHANNELS = {
+    "trick_xpert_2":     -1716333902,  # Trick Xpert 2.0 — 593K subs, invite-only
+    "frcp_2":            -1391583159,  # FRCP 2.0 — 144K subs, invite-only
+}
 
 POLL_INTERVAL   = 60   # seconds between full poll cycles
 LOOKBACK_MINUTES = 10  # look back 10 minutes — catches messages missed during restarts
@@ -67,6 +91,37 @@ from pipeline.deal_pipeline import process_message, split_multi_deal_message, is
 # within a 15-minute window is only processed once.
 _content_seen: dict[str, float] = {}   # hash → epoch timestamp
 _CONTENT_TTL = 900  # 15 minutes
+
+
+class BoundedIdSet:
+    """A set with O(1) membership that evicts the oldest entries once it exceeds
+    max_size. The previous plain `set` grew without bound — one entry per message
+    seen, forever — leaking memory over days of uptime. Eviction is safe here:
+    the poll loop stops at the lookback-window cutoff, so any ID old enough to be
+    evicted is already past the window and will never be checked again."""
+
+    def __init__(self, max_size: int = 20000):
+        self._set: set = set()
+        self._order: deque = deque()
+        self.max_size = max_size
+
+    def __contains__(self, key) -> bool:
+        return key in self._set
+
+    def add(self, key) -> None:
+        if key in self._set:
+            return
+        self._set.add(key)
+        self._order.append(key)
+        while len(self._order) > self.max_size:
+            self._set.discard(self._order.popleft())
+
+    def update(self, items) -> None:
+        for k in items:
+            self.add(k)
+
+    def __len__(self) -> int:
+        return len(self._set)
 
 
 def _is_duplicate_content(text: str) -> bool:
@@ -236,12 +291,19 @@ async def poll_channel(client, channel_entity, channel_name: str, processed_ids:
 
 
 async def cleanup_old_deals(sb):
-    """Delete deals older than 48 hours."""
+    """Delete deals older than 48 hours, and prune pipeline_logs to bound table
+    growth (every message seen writes a log row, so it grows ~10k rows/day)."""
     try:
         sb.rpc("delete_old_deals").execute()
         print("🧹 Cleaned up deals older than 48 hours")
     except Exception as e:
-        print(f"⚠️  Cleanup failed: {type(e).__name__}")
+        print(f"⚠️  Deal cleanup failed: {type(e).__name__}")
+    try:
+        cutoff = (datetime.now(timezone.utc) - timedelta(days=14)).isoformat()
+        sb.table("pipeline_logs").delete().lt("created_at", cutoff).execute()
+        print("🧹 Pruned pipeline_logs older than 14 days")
+    except Exception as e:
+        print(f"⚠️  Log prune failed: {type(e).__name__}")
 
 
 async def main():
@@ -252,26 +314,32 @@ async def main():
 
     # Validate channels
     valid_channels = {}
-    for ch in CHANNELS:
+    all_channels = [(ch, ch) for ch in CHANNELS] + [(name, cid) for name, cid in PRIVATE_CHANNELS.items()]
+    for ch_name, ch_ref in all_channels:
         try:
-            entity = await client.get_entity(ch)
-            valid_channels[ch] = entity
-            print(f"  ✅ {ch}")
+            entity = await client.get_entity(ch_ref)
+            valid_channels[ch_name] = entity
+            print(f"  ✅ {ch_name}")
         except Exception as e:
-            print(f"  ❌ {ch} — {type(e).__name__}")
+            print(f"  ❌ {ch_name} — {type(e).__name__}")
 
     if not valid_channels:
         print("❌ No valid channels. Exiting.")
         return
 
-    # Load processed IDs from DB — survives restarts
-    processed_ids = get_processed_ids_from_db()
+    # Load processed IDs from DB — survives restarts. Wrapped in a bounded set so
+    # the working set can't grow without limit over long uptimes.
+    processed_ids = BoundedIdSet(max_size=20000)
+    processed_ids.update(get_processed_ids_from_db())
 
     print(f"\n👂 Watching {len(valid_channels)} channels | poll every {POLL_INTERVAL}s | lookback {LOOKBACK_MINUTES}min\n")
 
     last_cleanup = datetime.now(timezone.utc)
     from supabase import create_client
-    sb = create_client(os.environ["SUPABASE_URL"], os.environ["SUPABASE_KEY"])
+    # Service-role key for destructive cleanup (deletes). Falls back to the anon
+    # key only if the service key isn't configured.
+    _cleanup_key = os.environ.get("SUPABASE_SERVICE_KEY") or os.environ["SUPABASE_KEY"]
+    sb = create_client(os.environ["SUPABASE_URL"], _cleanup_key)
 
     while True:
         poll_start = datetime.now(timezone.utc)

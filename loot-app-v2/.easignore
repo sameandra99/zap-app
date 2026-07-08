@@ -1,0 +1,11 @@
+node_modules/
+.git/
+ios/
+android/
+.expo/
+dist/
+build/
+web-build/
+*.log
+.DS_Store
+store-assets/

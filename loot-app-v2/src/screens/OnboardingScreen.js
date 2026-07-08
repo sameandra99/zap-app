@@ -1,65 +1,64 @@
 import React, { useRef, useState } from "react";
 import {
-  View, Text, StyleSheet, FlatList, TouchableOpacity,
-  Dimensions, Platform, StatusBar,
+  View, Text, StyleSheet, FlatList,
+  TouchableOpacity, Platform, StatusBar, Image, useWindowDimensions,
+  PermissionsAndroid,
 } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import messaging from "@react-native-firebase/messaging";
+import { API_BASE } from "../config";
 
-const { width, height } = Dimensions.get("window");
+const ORANGE = "#E8571A";
 
 const SLIDES = [
-  {
-    key: "1",
-    emoji: "⚡",
-    title: "Welcome to Zap.",
-    subtitle: "India's fastest deal feed.",
-    body: "100+ deals discovered daily from your favourite e-commerce websites — filtered so only the best reach you.",
-    bg: "#1C1917",
-    textColor: "#fff",
-    subColor: "#E8571A",
-    bodyColor: "#A8A29E",
-  },
-  {
-    key: "2",
-    emoji: "🛍️",
-    title: "One feed.\nEvery platform.",
-    subtitle: null,
-    body: "Amazon, Flipkart, Myntra, Nykaa, Ajio and more — we scan them all so you never have to check each one separately.",
-    bg: "#F7F5F2",
-    textColor: "#1C1917",
-    subColor: "#E8571A",
-    bodyColor: "#78716C",
-    pills: ["Amazon", "Flipkart", "Myntra", "Nykaa", "Ajio"],
-  },
-  {
-    key: "3",
-    emoji: "⏱",
-    title: "Good deals\ndon't wait.",
-    subtitle: null,
-    body: "Zap checks for new deals every 60 seconds. When something good drops, you'll see it before anyone else. Pull down anytime to refresh.",
-    bg: "#F7F5F2",
-    textColor: "#1C1917",
-    subColor: "#E8571A",
-    bodyColor: "#78716C",
-    highlight: "↑ 3 new deals",
-  },
-  {
-    key: "4",
-    emoji: "🔥",
-    title: "You're all set.",
-    subtitle: null,
-    body: "No sign-up. No spam. Just the best deals from across the internet, every single day.",
-    bg: "#1C1917",
-    textColor: "#fff",
-    subColor: "#E8571A",
-    bodyColor: "#A8A29E",
-    cta: true,
-  },
+  { key: "1", image: require("../assets/onboarding/ob3.jpg") },
+  { key: "2", image: require("../assets/onboarding/ob2.jpg") },
+  { key: "3", image: require("../assets/onboarding/ob1.jpg") },
 ];
 
+async function requestAndRegisterToken() {
+  try {
+    // On Android 13+ (API 33+), POST_NOTIFICATIONS is a runtime permission that
+    // must be requested via PermissionsAndroid — messaging().requestPermission()
+    // only checks the current status on Android and won't show the system dialog.
+    if (Platform.OS === "android" && Platform.Version >= 33) {
+      const result = await PermissionsAndroid.request(
+        PermissionsAndroid.PERMISSIONS.POST_NOTIFICATIONS,
+      );
+      if (result !== PermissionsAndroid.RESULTS.GRANTED) return;
+    } else {
+      // iOS (and Android < 13 where notifications are on by default)
+      const authStatus = await messaging().requestPermission();
+      const enabled =
+        authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+        authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+      if (!enabled) return;
+    }
+    const token = await messaging().getToken();
+    if (!token) return;
+    await fetch(`${API_BASE}/register-device`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ token }),
+    });
+  } catch (_) {}
+}
+
 export default function OnboardingScreen({ onDone }) {
+  const { width, height } = useWindowDimensions();
   const [activeIndex, setActiveIndex] = useState(0);
+  const [finishing, setFinishing] = useState(false);
   const listRef = useRef(null);
+
+  const finish = async () => {
+    if (finishing) return;
+    setFinishing(true);
+    // Request permission while still on the onboarding screen (before the
+    // screen transition) so the system dialog isn't swallowed by the animation.
+    await requestAndRegisterToken();
+    await AsyncStorage.setItem("zap_onboarded", "1");
+    onDone();
+  };
 
   const goNext = () => {
     if (activeIndex < SLIDES.length - 1) {
@@ -69,108 +68,58 @@ export default function OnboardingScreen({ onDone }) {
     }
   };
 
-  const finish = async () => {
-    await AsyncStorage.setItem("zap_onboarded", "1");
-    onDone();
-  };
-
   const onViewable = useRef(({ viewableItems }) => {
-    if (viewableItems.length > 0) {
-      setActiveIndex(viewableItems[0].index ?? 0);
-    }
+    if (viewableItems.length > 0) setActiveIndex(viewableItems[0].index ?? 0);
   }).current;
+
+  const isLast = activeIndex === SLIDES.length - 1;
 
   return (
     <View style={styles.root}>
-      <StatusBar
-        barStyle={SLIDES[activeIndex]?.bg === "#1C1917" ? "light-content" : "dark-content"}
-        backgroundColor={SLIDES[activeIndex]?.bg}
-      />
+      <StatusBar translucent backgroundColor="transparent" barStyle="dark-content" />
 
       <FlatList
         ref={listRef}
         data={SLIDES}
-        keyExtractor={s => s.key}
+        keyExtractor={(item) => item.key}
         horizontal
         pagingEnabled
         showsHorizontalScrollIndicator={false}
         onViewableItemsChanged={onViewable}
         viewabilityConfig={{ itemVisiblePercentThreshold: 50 }}
-        renderItem={({ item: s }) => (
-          <View style={[styles.slide, { backgroundColor: s.bg, width }]}>
-            {/* Skip */}
-            {!s.cta && (
-              <TouchableOpacity style={styles.skip} onPress={finish} activeOpacity={0.7}>
-                <Text style={[styles.skipText, { color: s.bodyColor }]}>Skip</Text>
-              </TouchableOpacity>
-            )}
-
-            {/* Content */}
-            <View style={styles.content}>
-              <Text style={styles.emojiGlyph}>{s.emoji}</Text>
-
-              <Text style={[styles.title, { color: s.textColor }]}>{s.title}</Text>
-
-              {s.subtitle && (
-                <Text style={[styles.subtitle, { color: s.subColor }]}>{s.subtitle}</Text>
-              )}
-
-              <Text style={[styles.body, { color: s.bodyColor }]}>{s.body}</Text>
-
-              {/* Category pills preview */}
-              {s.pills && (
-                <View style={styles.pillsWrap}>
-                  {s.pills.map(p => (
-                    <View key={p} style={styles.pill}>
-                      <Text style={styles.pillText}>{p}</Text>
-                    </View>
-                  ))}
-                </View>
-              )}
-
-              {/* New deals banner preview */}
-              {s.highlight && (
-                <View style={styles.highlightWrap}>
-                  <View style={styles.highlightBadge}>
-                    <Text style={styles.highlightText}>{s.highlight}</Text>
-                  </View>
-                </View>
-              )}
-            </View>
-
-            {/* CTA / Next */}
-            <View style={styles.bottom}>
-              {s.cta ? (
-                <TouchableOpacity style={styles.ctaBtn} onPress={finish} activeOpacity={0.85}>
-                  <Text style={styles.ctaBtnText}>Start exploring →</Text>
-                </TouchableOpacity>
-              ) : (
-                <TouchableOpacity style={[styles.nextBtn, { borderColor: s.textColor === "#fff" ? "rgba(255,255,255,0.2)" : "#E0DBD5" }]} onPress={goNext} activeOpacity={0.8}>
-                  <Text style={[styles.nextText, { color: s.textColor }]}>Next →</Text>
-                </TouchableOpacity>
-              )}
-
-              {/* Dots */}
-              <View style={styles.dots}>
-                {SLIDES.map((_, i) => (
-                  <View
-                    key={i}
-                    style={[
-                      styles.dot,
-                      {
-                        backgroundColor: i === activeIndex
-                          ? (s.textColor === "#fff" ? "#fff" : "#1C1917")
-                          : (s.textColor === "#fff" ? "rgba(255,255,255,0.25)" : "#D6D3CE"),
-                        width: i === activeIndex ? 20 : 6,
-                      },
-                    ]}
-                  />
-                ))}
-              </View>
-            </View>
-          </View>
+        renderItem={({ item }) => (
+          <Image
+            source={item.image}
+            style={{ width, height }}
+            resizeMode="cover"
+          />
         )}
+        style={StyleSheet.absoluteFill}
       />
+
+      <View style={[styles.nav, { paddingBottom: Platform.OS === "ios" ? 46 : 28 }]}>
+        <View style={styles.dotsRow}>
+          <View style={styles.dots}>
+            {SLIDES.map((_, i) => (
+              <View key={i} style={[styles.dot, i === activeIndex && styles.dotActive]} />
+            ))}
+          </View>
+          {!isLast && (
+            <TouchableOpacity
+              style={styles.skipBtn}
+              onPress={finish}
+              hitSlop={{ top: 14, bottom: 14, left: 16, right: 16 }}
+            >
+              <Text style={styles.skip}>Skip</Text>
+            </TouchableOpacity>
+          )}
+        </View>
+
+        <TouchableOpacity style={[styles.cta, finishing && styles.ctaDisabled]} onPress={goNext} activeOpacity={0.85} disabled={finishing}>
+          <Text style={styles.ctaText}>{finishing ? "Setting up…" : isLast ? "View latest deals" : "Next"}</Text>
+          <Text style={styles.ctaArrow}>{finishing ? "" : "→"}</Text>
+        </TouchableOpacity>
+      </View>
     </View>
   );
 }
@@ -179,119 +128,63 @@ const styles = StyleSheet.create({
   root: {
     flex: 1,
   },
-  slide: {
-    flex: 1,
-    height,
-    paddingTop: Platform.OS === "android" ? (StatusBar.currentHeight || 32) + 16 : 60,
-    paddingBottom: 48,
+  nav: {
+    position: "absolute",
+    bottom: 0,
+    left: 0,
+    right: 0,
     paddingHorizontal: 28,
-    justifyContent: "space-between",
+    paddingTop: 16,
   },
-  skip: {
-    alignSelf: "flex-end",
-    padding: 4,
-  },
-  skipText: {
-    fontSize: 14,
-    fontWeight: "600",
-  },
-  content: {
-    flex: 1,
-    justifyContent: "center",
-    paddingBottom: 20,
-  },
-  emojiGlyph: {
-    fontSize: 64,
-    marginBottom: 28,
-  },
-  title: {
-    fontSize: 36,
-    fontWeight: "800",
-    letterSpacing: -0.8,
-    lineHeight: 42,
-    marginBottom: 10,
-  },
-  subtitle: {
-    fontSize: 20,
-    fontWeight: "700",
-    marginBottom: 14,
-  },
-  body: {
-    fontSize: 16,
-    lineHeight: 24,
-    fontWeight: "400",
-    marginTop: 8,
-  },
-  pillsWrap: {
+  dotsRow: {
     flexDirection: "row",
-    flexWrap: "wrap",
-    gap: 8,
-    marginTop: 24,
-  },
-  pill: {
-    backgroundColor: "#EEEBE6",
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-    borderRadius: 50,
-  },
-  pillText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#78716C",
-  },
-  highlightWrap: {
-    marginTop: 28,
-    alignItems: "flex-start",
-  },
-  highlightBadge: {
-    backgroundColor: "#1C1917",
-    borderRadius: 50,
-    paddingVertical: 9,
-    paddingHorizontal: 20,
-  },
-  highlightText: {
-    color: "#fff",
-    fontSize: 13,
-    fontWeight: "700",
-    letterSpacing: 0.3,
-  },
-  bottom: {
     alignItems: "center",
-    gap: 20,
+    justifyContent: "center",
+    position: "relative",
+    marginBottom: 16,
   },
-  nextBtn: {
-    borderWidth: 1.5,
-    borderRadius: 50,
-    paddingVertical: 13,
-    paddingHorizontal: 36,
-    alignSelf: "stretch",
-    alignItems: "center",
-  },
-  nextText: {
-    fontSize: 15,
-    fontWeight: "700",
-  },
-  ctaBtn: {
-    backgroundColor: "#E8571A",
-    borderRadius: 50,
-    paddingVertical: 15,
-    paddingHorizontal: 36,
-    alignSelf: "stretch",
-    alignItems: "center",
-  },
-  ctaBtnText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "800",
-    letterSpacing: 0.2,
+  skipBtn: {
+    position: "absolute",
+    right: 0,
   },
   dots: {
     flexDirection: "row",
-    alignItems: "center",
     gap: 6,
   },
   dot: {
-    height: 6,
-    borderRadius: 3,
+    width: 7,
+    height: 7,
+    borderRadius: 4,
+    backgroundColor: "#D6CCC5",
+  },
+  dotActive: {
+    width: 22,
+    backgroundColor: ORANGE,
+  },
+  skip: {
+    fontSize: 15,
+    color: "#78716C",
+    fontWeight: "500",
+  },
+  cta: {
+    backgroundColor: ORANGE,
+    borderRadius: 50,
+    height: 54,
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+  },
+  ctaDisabled: {
+    opacity: 0.7,
+  },
+  ctaText: {
+    color: "#fff",
+    fontSize: 16,
+    fontWeight: "700",
+  },
+  ctaArrow: {
+    color: "#fff",
+    fontSize: 18,
   },
 });

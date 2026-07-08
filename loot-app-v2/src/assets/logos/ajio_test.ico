@@ -1,0 +1,21 @@
+<!DOCTYPE html>
+<html>
+<head>
+<title>Welcome to Ajio.com assets!</title>
+<style>
+    body {
+        width: 35em;
+        margin: 0 auto;
+        font-family: Tahoma, Verdana, Arial, sans-serif;
+    }
+</style>
+</head>
+<body>
+<h1>Page you are looking for is not found</h1>
+
+<p>For online shopping please refer to
+<a href="https://www.ajio.com">ajio.com</a>.<br/>
+
+<p><em>Thank you for using ajio.com.</em></p>
+</body>
+</html>

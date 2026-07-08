@@ -13,11 +13,11 @@ export default function App() {
   // Called when user taps a push notification — passes the deal_id from FCM data
   const handleDealOpen = (dealId) => {
     if (!dealId) return;
-    console.log("[App] Navigate to deal:", dealId);
+    if (__DEV__) console.log("[App] Navigate to deal:", dealId);
     setPendingDealId(dealId);
   };
 
-  useNotifications(handleDealOpen);
+  useNotifications(handleDealOpen, { requestPermission: onboarded === true });
 
   useEffect(() => {
     AsyncStorage.getItem("zap_onboarded").then((val) => {

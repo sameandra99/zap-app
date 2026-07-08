@@ -11,6 +11,7 @@ import re
 import json
 import time
 import base64
+import asyncio
 import traceback
 import hashlib
 import httpx
@@ -150,6 +151,12 @@ ACCEPT ALWAYS (any brand):
   - Any item at truly exceptional price (₹99 earphones, ₹199 shoes, etc.)
   - Flash/limited stock deals
   - International brand on Ajio/Myntra at any discount
+  - Useful household items at a good price, brand NOT required — storage containers,
+    clothes organisers, bedsheets, kitchen tools, lunch boxes/bottles, bags & backpacks,
+    bean bags, cutlery holders, hooks/racks, laundry bags, mats. A concrete product name
+    + a good price is enough (e.g. "Cutlery Holder @ ₹110", "XXXL Bean Bag ₹798",
+    "Clothes organisers from ₹164"). See HIGH-UTILITY VALUE LANE. Do NOT reject these as
+    "basic", "unbranded", "no-name", "low shareability" or "mass-market".
 
 CATEGORY / LISTING DEALS — ACCEPT across ALL categories (this is a deal even
 without one specific product or an absolute price):
@@ -172,7 +179,33 @@ HOME/KITCHEN RULE (IMPORTANT — do not over-filter):
     these are exactly what a home-making professional tells a friend about. ACCEPT them.
   - Do NOT reject these as "basic" or "low shareability" just because the category is a toaster/cooker/cookware.
     The BRAND + real DISCOUNT is what makes it shareable, not novelty.
-  - Only reject home/kitchen if it is UNBRANDED/no-name OR has a trivial discount (<40%) at a high price.
+  - Only reject home/kitchen if it is UNBRANDED/no-name AND it fails the HIGH-UTILITY VALUE LANE below.
+
+HIGH-UTILITY VALUE LANE (ACCEPT useful everyday items at a genuinely good price, even with NO brand):
+  Some products are worth sharing because they are PRACTICAL and the PRICE is genuinely
+  good — not because of an aspirational brand. A home-making friend happily forwards
+  "fridge storage containers, set of 3 at ₹102" or "double bedsheet with pillow covers
+  at ₹197" or "a sturdy laundry bag at ₹149". ACCEPT an unbranded/no-name item when ALL hold:
+    (1) it names a CONCRETE, specific product (e.g. "storage containers set of 3",
+        "lunch box with bottle", "double bedsheet", "clothes organiser", "laundry bag",
+        "vacuum storage bags", "cutlery holder", "bean bag") — NOT a vague sale ("Maha
+        Home Sale start ₹49", "Upto 90% off on home essentials" with no named product).
+        A "from ₹X" / "starting ₹X" price on a named product type (e.g. "Clothes
+        organisers from ₹164") COUNTS as concrete — accept it, it is NOT a vague sale;
+    (2) it has a clear absolute ₹ price OR a strong, specific discount;
+    (3) the price is genuinely attractive for that everyday-useful category.
+  Eligible categories (any brand, INCLUDING no-name): home & kitchen storage/organisation,
+  bedsheets & home textiles, kitchen tools & gadgets, cleaning/laundry helpers, lunch
+  boxes & bottles, bags & backpacks, bean bags, mats/rugs, hooks/racks/holders, and
+  similar genuinely useful household items.
+  DEFAULT TO ACCEPT for these: if it is a concrete useful household product with a price,
+  ACCEPT it. You MUST NOT reject a value-lane item using the words "basic", "low
+  shareability", "generic", "no-name" or "unbranded" — for these everyday-useful
+  categories, usefulness + a good price IS sufficient shareability. The absence of a
+  brand is NOT a valid rejection reason here.
+  This lane does NOT rescue: FMCG commodities (soap/shampoo/toothpaste/deodorant/face
+  cream — still rejected), vague sale announcements with no concrete product, or
+  generic unbranded APPAREL (kurti/t-shirt/shirt/trousers/jeans), which still needs a brand.
 
 NEVER ACCEPT — low-value mass-market FMCG brands (reject even at 90%+ off):
   Deodorants/sprays: axe, engage, rexona, fogg, set wet, wild stone, denver
@@ -193,7 +226,8 @@ NEVER ACCEPT — low-value mass-market FMCG brands (reject even at 90%+ off):
 REJECT:
   - Low-value mass-market brands above (regardless of discount)
   - Generic unbranded clothing (kurti/t-shirt/shirt/trousers) from unknown brands
-  - Generic UNBRANDED home/kitchen goods from no-name sellers
+  - Generic UNBRANDED home/kitchen goods from no-name sellers — UNLESS they pass the
+    HIGH-UTILITY VALUE LANE above (concrete useful product + genuinely good price)
   - Generic personal care from unknown brands
   - Credit-card / finance / loan / Bajaj Finserv EMI offers (not a product deal)
   - Obvious spam, or empty messages with no product, no price AND no discount
@@ -202,40 +236,35 @@ REJECT:
   discount (e.g. "Puma sneakers 75% off") is valid even with no absolute price.
   When a deal is borderline, LEAN TOWARD ACCEPTING (unless the brand is blocked).
 
-Zap. copy style — we are a deal curation app, not a retailer. Write like a knowledgeable friend texting you about something they spotted, not a sales banner.
+Zap. copy style — we are a deal curation app, not a retailer. Crisp, product-led, no fluff.
 
 Examples of good copy:
-- "Apple AirTag at **₹1,804** — coupon applies at cart."
-- "Halonix 12W LED Bulbs, pack of 2 at **₹149**."
-- "Ambrane MagSafe powerbank 10,000mAh at **₹599** with SBI Visa."
-- "Timex watches up to 60% off — use TIME2SAVE for an extra 10%."
-- "Pigeon trimmer at **₹398**."
-- "HRX footwear up to 89% off — men's and women's range."
-- "boAt Aavante 2.1 soundbar at **₹6,299** with HDFC card."
+- "Apple AirTag — ₹1,804 (coupon at cart)"
+- "Halonix 12W LED bulbs, pack of 2 — ₹149"
+- "Ambrane MagSafe 10,000mAh powerbank — ₹599 (HDFC card)"
+- "Timex watches — up to 60% off (use TIME2SAVE)"
+- "Pigeon trimmer — ₹398"
+- "HRX men's & women's shoes — up to 50% off"
+- "boAt Aavante 2.1 soundbar — ₹6,299"
 
 Rules:
-- Start directly with brand name or product — no prefix labels
-- NEVER use: "Buy now", "Shop now", "Check out", "Get it", "Limited time", "Flash sale", "Don't miss", "GRAB:", "Lowest:"
-- NEVER add opinion or commentary: no "great deal", "solid price", "worth it"
-- NEVER include model/SKU numbers (e.g. "1118", "518", "V4 NL", product codes) — use only the product name
+- **Brand + product name, max 8 words.** Trim bloated titles ruthlessly: "MILTON Pro cook Triply Stainless-Steel Casserole Handi... with Lid" → "Milton Triply 3L casserole". Keep one defining spec if it creates desire (size/capacity), drop dimensions/materials/warranty.
+- Start with brand/product — no prefix labels like "Buy", "Shop", "Get"
+- NEVER use: "Buy now", "Shop now", "Limited time", "Flash sale", "Don't miss", "GRAB:", "Lowest:", "Amazing", "Great deal", "Solid price"
+- NEVER include: model/SKU numbers, descriptive fluff (material lists, warranty claims, "with X included")
 - *** CRITICAL — NEVER FABRICATE A PRICE. ***
-    Use ONLY a price that LITERALLY appears in the message text. You do NOT see
-    the product page — you only have the message. Do NOT guess, estimate, round,
-    or infer a price from the discount %, the product type, or anything else.
-    If the message has NO explicit ₹ amount, your copy MUST NOT contain any ₹
-    price. Instead describe the discount only, e.g. "Bergner cookware at 59% off"
-    or "Floral king bedsheet with 2 pillow covers, 86% off". A wrong price
-    destroys user trust — when in doubt, omit the price.
-- Copy the price EXACTLY as written in the message (same digits). Use the listed
-  sale price, NOT the effective price after cashback/bank offers.
-- Include the price in ₹ with **bold** ONLY when it is present in the message
-- Mention coupon code if present naturally: "use code XYZ"
-- Max 2 short sentences
-- Tone: neutral, factual, direct — state the product and price, nothing more
-- NEVER include platform name (Amazon/Myntra) in copy — shown separately in UI
+    Use ONLY a price that LITERALLY appears in the message text. Do NOT guess from discount % or product type.
+    If the message has NO explicit ₹ amount, omit the price — write only the discount: "Bergner cookware 59% off"
+    NEVER write "price unavailable" or similar placeholders.
+- Copy price EXACTLY as in the message. Use the listed sale price, NOT effective price after cashback/offers.
+- Consistent format: `— ₹X,XXX` or `— up to X% off` (the UI badge will carry the number, so keep it brief here)
+- Include coupon/card/code info briefly if present: "(use CODE)", "(HDFC card)", "(coupon at cart)"
+- Max 1 short sentence
+- Tone: neutral, factual — just the product, price, and card/coupon if relevant
+- NEVER include platform name (Amazon/Myntra) — shown separately in UI
 - NEVER include raw URLs
-- If multiple variants (men's/women's), summarise as a range: "men's and women's range"
-- If the price seems unusually low (under ₹200 for branded shoes, under ₹500 for electronics), double-check — it may be an error in the source message
+- If multiple variants, summarise: "men's & women's shoes" not "men's and women's range"
+- Suspicious prices (under ₹200 for branded shoes, under ₹500 for electronics): double-check source — likely error
 
 Respond ONLY with valid JSON, no other text:
 {
@@ -246,6 +275,7 @@ Respond ONLY with valid JSON, no other text:
   "category": "electronics|fashion|footwear|beauty|home|sports|other",
   "original_price": "₹X,XXX or null",
   "deal_price": "₹X,XXX or null",
+  "discount_pct": "X (numeric, e.g., 50 for 50% off) or null",
   "coupon_code": "CODE or null",
   "url": "the deal URL found in the message or null"
 }
@@ -373,6 +403,86 @@ def score_copy_quality(raw_text: str) -> tuple[int, str]:
     return score, ",".join(reasons)
 
 
+_TG_PLATFORM_EMOJI = {
+    "amazon": "🛒", "flipkart": "🛍️", "myntra": "👗",
+    "ajio": "🧢", "nykaa": "💄", "meesho": "📦",
+    "zepto": "⚡", "blinkit": "🟡",
+}
+
+def _tg_html(text: str) -> str:
+    return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+
+
+async def post_to_telegram_channel(deal: dict, image_bytes: Optional[bytes] = None):
+    """Post a deal to the configured Telegram channel. No-ops if env vars are absent."""
+    token   = os.environ.get("TELEGRAM_BOT_TOKEN")
+    channel = os.environ.get("TELEGRAM_CHANNEL_ID")
+    if not token or not channel:
+        return
+
+    try:
+        # Title: first non-empty line of display_title, fall back to copy
+        raw_title = (deal.get("display_title") or deal.get("copy") or "")
+        title = re.sub(r"\*+", "", raw_title.split("\n")[0]).strip()[:120]
+
+        platform_key = (deal.get("platform") or "").lower()
+        emoji = _TG_PLATFORM_EMOJI.get(platform_key, "🏪")
+        platform_name = deal.get("platform") or "Deal"
+
+        def _parse_price(v):
+            try:
+                return int(str(v).replace(",", "").replace("₹", "").strip())
+            except Exception:
+                return None
+
+        dp = _parse_price(deal.get("deal_price"))
+        op = _parse_price(deal.get("original_price"))
+        disc = deal.get("discount_pct")
+
+        price_line_parts = []
+        if dp:
+            price_line_parts.append(f"💰 <b>₹{dp:,}</b>")
+        if op and dp and op > dp:
+            price_line_parts.append(f"<s>₹{op:,}</s>")
+        if disc:
+            price_line_parts.append(f"<b>{int(disc)}% OFF</b>")
+
+        lines = [f"<b>{_tg_html(title)}</b>", ""]
+        if price_line_parts:
+            lines.append("  ".join(price_line_parts))
+        lines.append(f"{emoji} {_tg_html(platform_name.capitalize())}")
+        caption = "\n".join(lines)
+
+        keyboard = None
+        if deal.get("affiliate_url"):
+            keyboard = {"inline_keyboard": [[{"text": "Grab Deal →", "url": deal["affiliate_url"]}]]}
+
+        base = f"https://api.telegram.org/bot{token}"
+        extra = {"reply_markup": json.dumps(keyboard)} if keyboard else {}
+
+        async with httpx.AsyncClient(timeout=15) as client:
+            if image_bytes:
+                resp = await client.post(
+                    f"{base}/sendPhoto",
+                    data={"chat_id": channel, "caption": caption, "parse_mode": "HTML", **extra},
+                    files={"photo": ("deal.jpg", image_bytes, "image/jpeg")},
+                )
+            else:
+                payload = {"chat_id": channel, "text": caption, "parse_mode": "HTML"}
+                if keyboard:
+                    payload["reply_markup"] = json.dumps(keyboard)
+                resp = await client.post(f"{base}/sendMessage", json=payload)
+
+        data = resp.json()
+        if data.get("ok"):
+            print(f"  [TG] Posted to channel ✅")
+        else:
+            print(f"  [TG] Post failed: {data.get('description','?')[:100]}")
+
+    except Exception as e:
+        print(f"  [TG] {type(e).__name__}: {str(e)[:80]}")
+
+
 async def send_push_notification(title: str, body: str, deal_id: str = None):
     """Send push notification to all registered devices via the API.
     Passes deal_id so the app can deep-link directly to the deal on tap.
@@ -489,11 +599,28 @@ async def call_llm(raw_text: str, extracted_urls: list = None, tone: str = "defa
         "response_format": {"type": "json_object"},
     }
 
-    async with httpx.AsyncClient(timeout=30) as client:
-        response = await client.post(OPENROUTER_URL, headers=headers, json=payload)
-        response.raise_for_status()
-        content = response.json()["choices"][0]["message"]["content"]
-        return json.loads(content)
+    # Retry transient failures (OpenRouter 429 rate limits, 5xx, network blips,
+    # and the occasional malformed JSON) with backoff. Without this, a momentary
+    # 429 drops the deal permanently — it's marked processed and never retried.
+    last_err = None
+    for attempt in range(3):
+        try:
+            async with httpx.AsyncClient(timeout=30) as client:
+                response = await client.post(OPENROUTER_URL, headers=headers, json=payload)
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"]
+            return json.loads(content)
+        except (httpx.TransportError, httpx.TimeoutException, httpx.HTTPStatusError,
+                json.JSONDecodeError, KeyError) as e:
+            last_err = e
+            status = getattr(getattr(e, "response", None), "status_code", None)
+            # Genuine client errors (400/401/403) won't fix themselves — fail fast.
+            if isinstance(e, httpx.HTTPStatusError) and status and status < 500 and status != 429:
+                raise
+            if attempt < 2:
+                await asyncio.sleep(1.5 * (attempt + 1))
+                continue
+            raise last_err
 
 
 def strip_affiliate_params(url: str) -> str:
@@ -731,6 +858,32 @@ def host_of(url: str) -> str:
         return ""
 
 
+# Cheap sub-floor deals (₹X earphones, ₹110 cutlery holders, ₹149 bulbs) read as
+# junk and kill the premium "woah" feeling of the feed. We drop any deal whose
+# explicit price is at/under this floor. Deals with NO parseable price (brand +
+# discount, e.g. "Puma 75% off") are NOT judged here — they pass through.
+MIN_DEAL_PRICE = 150
+
+
+def parse_price_inr(raw) -> Optional[int]:
+    """Parse a price string like '₹1,804', 'Rs. 599', '₹2,499 with HDFC' into an
+    int (1804, 599, 2499). Returns None if no rupee amount is present."""
+    if raw is None:
+        return None
+    s = str(raw)
+    # First ₹/Rs-style amount, else first standalone number group.
+    m = re.search(r'(?:₹|rs\.?|inr)\s*([\d,]+)', s, flags=re.IGNORECASE)
+    if not m:
+        # Bare number, but NOT a percentage (e.g. "75% off" is a discount, not a price).
+        m = re.search(r'\b(\d[\d,]*)\b(?!\s*%)', s)
+    if not m:
+        return None
+    try:
+        return int(m.group(1).replace(",", ""))
+    except ValueError:
+        return None
+
+
 def is_final_retailer(url: str) -> bool:
     """True if host is a known terminal ecommerce site (no redirect to follow)."""
     h = host_of(url)
@@ -777,6 +930,10 @@ def is_product_url(url: str) -> bool:
         return False
     h = host_of(url)
     path = urlparse(url).path.lower()
+
+    # Never a product URL — chat/social hosts
+    if any(h == s or h.endswith("." + s) for s in SOCIAL_HOSTS):
+        return False
 
     # STRICT tier
     if "amazon" in h:
@@ -1216,6 +1373,212 @@ def _extract_amazon_image_url(html: str) -> Optional[str]:
     return None
 
 
+def _extract_amazon_product_title(html: str) -> Optional[str]:
+    """Extract product title from Amazon product page HTML."""
+    for pattern in [
+        r'<title>(.*?)\s*\|\s*Amazon\.in</title>',
+        r'id="productTitle"[^>]*>([^<]+)<',
+        r'"title"\s*:\s*"([^"]+)"',
+    ]:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            title = m.group(1).strip()
+            if title and len(title) > 10:
+                return title
+    return None
+
+
+def _extract_amazon_mrp(html: str) -> Optional[int]:
+    """Extract the crossed-out MRP from an Amazon product page.
+
+    Returns None if the page doesn't have a clear MRP, or if the extracted
+    value looks like a deal price rather than the original retail price.
+    """
+    patterns = [
+        r'"basisPrice"[\s\S]{0,300}?"amount"\s*:\s*([\d]+(?:\.\d+)?)',
+        r'M\.?R\.?P\.?[^₹<]*[₹₹]\s*([\d,]+)',
+        r'class="[^"]*a-text-price[^"]*"[^>]*>\s*<span[^>]*>\s*[₹₹]([\d,]+)',
+        r'"wasPrice"[\s\S]{0,300}?"amount"\s*:\s*([\d]+(?:\.\d+)?)',
+    ]
+    for p in patterns:
+        m = re.search(p, html, re.IGNORECASE)
+        if m:
+            try:
+                v = int(float(m.group(1).replace(",", "")))
+            except (ValueError, TypeError):
+                continue
+            if 50 <= v <= 5_000_000:
+                return v
+    return None
+
+
+def _extract_amazon_discount_pct(html: str) -> Optional[int]:
+    """Extract the discount percentage from Amazon product page HTML.
+
+    This is the *truthful* discount straight off the product page (vs. whatever
+    the Telegram message claimed). Free to compute — we already have this HTML
+    in hand from the title fetch, so no extra network request.
+
+    Amazon renders the savings a few different ways depending on the page
+    template; try the most specific (labelled savings) first, then a guarded
+    bare "-NN%" fallback so we don't grab an unrelated percentage.
+    """
+    patterns = [
+        r'savingsPercentage["\']?\s*[:=]\s*["\']?\s*-?\s*(\d{1,2})\s*%',
+        r'reinventPriceSavingsPercentageMargin[^>]*>\s*-?\s*(\d{1,2})\s*%',
+        r'class="[^"]*savingsPercentage[^"]*"[^>]*>\s*-?\s*(\d{1,2})\s*%',
+        r'-\s*(\d{1,2})\s*%\s*</span>',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            try:
+                pct = int(m.group(1))
+            except (ValueError, TypeError):
+                continue
+            if 1 <= pct <= 99:
+                return pct
+    return None
+
+
+def _extract_amazon_price(html: str) -> Optional[int]:
+    """The 'price to pay' off the Amazon product page, as an int rupee value.
+
+    Free to compute — same HTML we already fetch for the title/discount. This is
+    the truthful current price; we prefer it over the LLM's message-derived guess.
+    """
+    patterns = [
+        r'"priceToPay"[\s\S]{0,400}?"amount"\s*:\s*([\d]+(?:\.\d+)?)',
+        r'id="corePriceDisplay[\s\S]{0,600}?a-price-whole">\s*([\d,]+)',
+        r'"priceAmount"\s*:\s*([\d]+(?:\.\d+)?)',
+        r'a-price-whole">\s*([\d,]+)',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            try:
+                v = int(float(m.group(1).replace(",", "")))
+            except (ValueError, TypeError):
+                continue
+            if 50 <= v <= 5_000_000:
+                return v
+    return None
+
+
+def _discount_from_copy(copy: str) -> Optional[int]:
+    """Headline discount % stated in the copy text — fallback for non-Amazon
+    deals (Flipkart/Myntra/Ajio) we don't scrape. Free: regex, no LLM."""
+    pcts = [int(m) for m in re.findall(r"(\d{1,3})\s*%", copy or "")]
+    pcts = [p for p in pcts if 1 <= p <= 99]
+    return max(pcts) if pcts else None
+
+
+def _discount_from_prices(deal_price, original_price) -> Optional[int]:
+    """Compute discount % from deal_price + original_price when copy has no %."""
+    try:
+        def to_float(v):
+            return float(re.sub(r"[^\d.]", "", str(v)))
+        dp, op = to_float(deal_price), to_float(original_price)
+        if op > dp > 0:
+            pct = round((op - dp) / op * 100)
+            return pct if 1 <= pct <= 99 else None
+    except Exception:
+        pass
+    return None
+
+
+_TITLE_SYSTEM = (
+    "You turn messy e-commerce deal text into a short, scannable product title.\n"
+    "Line 1 (always): brand + product type + the 1-2 most important differentiating "
+    "specs (size, capacity, storage, key model number) embedded naturally. "
+    "5-7 words max. No prices, no %, no marketing words (AI, super speed, premium, "
+    "best, original, smart — unless it IS the model name).\n"
+    "Line 2 (only if a coupon/promo code exists in the text): 'Use CODE' — e.g. "
+    "'Use FLAT200'. If no code is present, output only line 1.\n\n"
+    "Examples:\n"
+    "Input: Samsung 9 kg 5-star AI EcoBubble Wi-Fi washing machine — use code SAVE500\n"
+    "Output:\nSamsung 9kg EcoBubble Washing Machine\nUse SAVE500\n\n"
+    "Input: Whirlpool 90 cm Smart Auto-clean Kitchen Chimney\n"
+    "Output:\nWhirlpool 90cm Auto-clean Chimney\n\n"
+    "Input: boAt Airdopes 311 Pro TWS Earbuds with 50H Playback\n"
+    "Output:\nboAt Airdopes 311 Pro Earbuds\n\n"
+    "Input: Acer 55 inch 4K LED Smart TV — coupon TATA200\n"
+    "Output:\nAcer 55\" 4K LED Smart TV\nUse TATA200\n\n"
+    "Return ONLY the title lines, nothing else."
+)
+
+
+def _clean_title_lines(out: str) -> Optional[str]:
+    raw = [l.strip().strip('"').strip() for l in (out or "").strip().split("\n") if l.strip()]
+    kept = []
+    for l in raw:
+        low = l.lower()
+        if re.match(r"^(no\b|none\b|n/?a\b|line\s*\d|output|input)", low):
+            continue
+        if "₹" in l or re.search(r"\b\d+\s*%|\brs\.?\b|\boff\b", low):
+            continue
+        kept.append(l)
+    return "\n".join(kept[:2]) or None
+
+
+async def generate_display_title(copy: str) -> Optional[str]:
+    """Clean 2-line title via the cheap 8B + few-shot (~$0.06/mo at current volume)."""
+    if not copy:
+        return None
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                OPENROUTER_URL,
+                headers={"Authorization": f"Bearer {OPENROUTER_API_KEY}", "Content-Type": "application/json"},
+                json={
+                    "model": MODEL,
+                    "messages": [
+                        {"role": "system", "content": _TITLE_SYSTEM},
+                        {"role": "user", "content": f'Deal: "{copy}"'},
+                    ],
+                    "temperature": 0.1,
+                    "max_tokens": 40,
+                },
+            )
+            if r.status_code == 200:
+                return _clean_title_lines(r.json()["choices"][0]["message"]["content"])
+    except Exception as e:
+        print(f"  ⚠️  display_title gen failed: {type(e).__name__}")
+    return None
+
+
+def _check_copy_link_consistency(copy: str, product_title: Optional[str]) -> bool:
+    """
+    Check if the copy's product name matches the actual product title.
+    Returns True if consistent (or no title to verify against), False if mismatch.
+
+    E.g., copy="Apple AirPods Pro" vs title="HomeWiz Kitchen Trolley" → False.
+    Prevents bait-and-switch deals where the text claims one product but the link
+    goes to a completely different one.
+    """
+    if not product_title:
+        return True  # Can't verify — assume OK
+
+    copy_lower = copy.lower()
+    title_lower = product_title.lower()
+
+    # Extract keywords from copy (first few words, likely brand + product)
+    copy_words = set(re.findall(r'\b[a-z0-9]{3,}\b', copy_lower))
+    title_words = set(re.findall(r'\b[a-z0-9]{3,}\b', title_lower))
+
+    # If any key words from copy appear in title, assume they're talking about the same product
+    overlap = copy_words & title_words
+    if overlap and len(overlap) >= 2:
+        return True
+
+    # If there's substantial overlap (>30% of copy words in title), assume match
+    if copy_words and len(overlap) / len(copy_words) > 0.3:
+        return True
+
+    # No meaningful overlap — likely a mismatch
+    return False
+
+
 async def _fetch_amazon_image_paapi(
     asin: str, access_key: str, secret_key: str, partner_tag: str
 ) -> Optional[bytes]:
@@ -1550,6 +1913,19 @@ async def fetch_product_title(url: str) -> Optional[str]:
         return None
 
 
+def _looks_like_image(b: Optional[bytes]) -> bool:
+    """Validate magic bytes so we never store an HTML error page or a truncated
+    download as a product image (which renders blank in the app)."""
+    if not b or len(b) < 100:
+        return False
+    return (
+        b[:3] == b"\xff\xd8\xff"                          # JPEG
+        or b[:8] == b"\x89PNG\r\n\x1a\n"                  # PNG
+        or (b[:4] == b"RIFF" and b[8:12] == b"WEBP")     # WEBP
+        or b[:6] in (b"GIF87a", b"GIF89a")               # GIF
+    )
+
+
 async def save_to_db(deal: dict, image_bytes: Optional[bytes]):
     """Save processed deal to Supabase."""
     try:
@@ -1558,6 +1934,10 @@ async def save_to_db(deal: dict, image_bytes: Optional[bytes]):
 
         # Upload image using service role key
         image_url = None
+        if image_bytes and not _looks_like_image(image_bytes):
+            print(f"  ⚠️  Image bytes failed validation ({len(image_bytes)}B, not a "
+                  f"valid JPEG/PNG/WEBP/GIF) — skipping upload")
+            image_bytes = None
         if image_bytes:
             try:
                 safe_id = deal['id'].replace('/', '_').replace(' ', '_')
@@ -1626,16 +2006,49 @@ def copy_fingerprint(copy: str) -> str:
         w for w in re.findall(r"[a-z0-9₹]+", text)
         if w not in stop and len(w) > 1
     )[:6]
+    # Guard the empty-key case: copy that's all stop-words/single chars with no
+    # discount % would otherwise produce md5("") — a fixed hash that wrongly
+    # collides unrelated short deals. Treat as "no fingerprint" (matches the
+    # `if fp:` guard in check_duplicate, so it's simply skipped).
+    if not words and not pct:
+        return ""
     key = " ".join(words + pct)
     return hashlib.md5(key.encode()).hexdigest()
 
 
+def product_fingerprint(copy: str) -> str:
+    """
+    Fingerprint the PRODUCT IDENTITY (leading product name), ignoring the
+    price / coupon / discount tail.
+
+    copy_fingerprint() above keys on the whole word-set, so the SAME product
+    reposted with different wording or links produces DIFFERENT fingerprints
+    ("Fastrack Limitless Smartwatch at ₹1,599" vs "Fastrack Limitless Smartwatch")
+    and slips through. This keys only on the product-name prefix, so paraphrased
+    reposts of the same product collapse to one fingerprint while genuinely
+    different products ("Samsung AI TV" vs "Samsung Galaxy M14") stay distinct.
+    """
+    if not copy:
+        return ""
+    # Cut at the first price / offer-tail marker — keep only the product-name prefix
+    text = re.split(
+        r"\s+(?:at|from|for|upto|up\s+to|flat|only|deal|offer)\b|\s*[-–—@₹]|,",
+        copy.strip(), maxsplit=1, flags=re.IGNORECASE,
+    )[0]
+    words = [w for w in re.findall(r"[a-z0-9]+", text.lower()) if len(w) > 1]
+    if len(words) < 2:          # need a real product name, not a generic token
+        return ""
+    return hashlib.md5(" ".join(words[:5]).encode()).hexdigest()
+
+
 async def check_duplicate(sb, url: str, copy: str) -> bool:
     """
-    Check for duplicate deals within a 15-minute window using three strategies:
+    Check for duplicate deals within a 15-minute window using four strategies:
     1. Amazon ASIN direct DB query (most reliable — avoids Python-loop timing issues)
     2. Base URL match (non-Amazon URLs — canonical clean URL comparison)
     3. Copy fingerprint match (catches same sale posted by multiple channels)
+    4. Product fingerprint match (catches same PRODUCT reposted with different
+       wording/links — different price tails or redirect shorteners)
 
     Only checks deals posted in the last 15 minutes to allow legitimate reposts.
     """
@@ -1654,6 +2067,7 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
         asin = extract_asin(url)
         base = get_base_url(url)
         fp = copy_fingerprint(copy)
+        pfp = product_fingerprint(copy)
 
         for row in result.data:
             existing_url = row.get("affiliate_url", "") or ""
@@ -1671,6 +2085,13 @@ async def check_duplicate(sb, url: str, copy: str) -> bool:
 
             # 3. Copy fingerprint match (catches Myntra/category deal reposts)
             if fp and copy_fingerprint(existing_copy) == fp:
+                return True
+
+            # 4. Product fingerprint match (same product, different wording/links —
+            #    e.g. one channel posts with a price tail, another without; or two
+            #    different redirect shorteners for the same item)
+            if pfp and product_fingerprint(existing_copy) == pfp:
+                print(f"  🔎 Duplicate product: {' '.join(re.findall(r'[A-Za-z0-9]+', copy.lower())[:5])}")
                 return True
 
         return False
@@ -2004,6 +2425,23 @@ async def process_message(
             })
             return
 
+        # 5c. Price floor — drop cheap sub-₹150 junk that kills the feed's buzz.
+        #     Only judges deals with an explicit, parseable price; brand/discount
+        #     deals with no ₹ amount pass through untouched.
+        _price = parse_price_inr(result.get("deal_price"))
+        if _price is not None and _price <= MIN_DEAL_PRICE:
+            print(f"  🚫 Below price floor (₹{_price} ≤ ₹{MIN_DEAL_PRICE}), skipping")
+            await _try_log(sb, {
+                "raw_text": raw_text[:500], "llm_decision": result,
+                "is_valid_deal": False,
+                "filter_reason": f"Below price floor: ₹{_price}",
+                "was_posted": False, "source_channel": source_channel,
+                "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality, "quality_reasons": quality_reasons,
+                "affiliate_url": affiliate_url,
+            })
+            return
+
         # Check if this URL/copy was already posted (dedup across channels)
         if await check_duplicate(sb, affiliate_url, result.get("copy", "")):
             print(f"  ⏭️  Duplicate, skipping: {result.get('copy','')[:60]}...")
@@ -2024,9 +2462,11 @@ async def process_message(
         deal = {
             "id":             f"{source_channel}_{message_id}",
             "copy":           result["copy"],
+            "display_title":  None,  # set below via the cheap few-shot title generator
             "platform":       platform,
             "original_price": result.get("original_price"),
             "deal_price":     result.get("deal_price"),
+            "discount_pct":   result.get("discount_pct"),
             "coupon_code":    result.get("coupon_code"),
             "affiliate_url":  affiliate_url,
             "source_channel": source_channel,
@@ -2035,18 +2475,77 @@ async def process_message(
         print(f"  ✅ Valid deal: {deal['copy'][:80]}")
         deal_id = deal["id"]
 
-        # No Telegram image? Try fetching product image
-        if not image_bytes and affiliate_url:
+        # Website images are higher quality than Telegram thumbnails — always try
+        # scraping first; fall back to the Telegram image only if scraping fails.
+        tg_image_bytes = image_bytes
+        image_bytes = None
+
+        amazon_title = None
+        if affiliate_url:
             asin = extract_asin(affiliate_url)
             is_amazon = bool(asin) or "amazon" in affiliate_url.lower()
             if asin:
-                # Amazon: only the product-image JSON path (never og:image — that
-                # returns the UI sprite on bot-stripped pages).
+                # Amazon: fetch image + title. Title is used for copy↔link consistency check.
                 image_bytes = await fetch_amazon_image(asin)
+                # Also fetch the product page once: title (consistency check) AND the
+                # true discount % both come from this same HTML — no extra request.
+                try:
+                    async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
+                        headers = {
+                            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+                            "Accept-Language": "en-IN,en;q=0.9",
+                        }
+                        r = await client.get(f"https://www.amazon.in/dp/{asin}", headers=headers, timeout=10)
+                        if r.status_code == 200:
+                            amazon_title = _extract_amazon_product_title(r.text)
+                            scraped_pct = _extract_amazon_discount_pct(r.text)
+                            if scraped_pct is not None:
+                                # Page truth beats the LLM's message-derived guess.
+                                if deal.get("discount_pct") != scraped_pct:
+                                    print(f"  🏷️  Scraped discount {scraped_pct}% (was {deal.get('discount_pct')})")
+                                deal["discount_pct"] = scraped_pct
+                            scraped_price = _extract_amazon_price(r.text)
+                            if scraped_price is not None:
+                                # Truthful current price beats the message-derived one.
+                                deal["deal_price"] = f"₹{scraped_price:,}"
+                            scraped_mrp = _extract_amazon_mrp(r.text)
+                            if scraped_mrp and scraped_price and scraped_mrp > scraped_price:
+                                # Validate: MRP must be consistent with the discount % (within 20 pp).
+                                # If they diverge, the regex matched an interim sale price, not the true MRP.
+                                if scraped_pct:
+                                    computed_pct = round((scraped_mrp - scraped_price) / scraped_mrp * 100)
+                                    if abs(computed_pct - scraped_pct) <= 20:
+                                        deal["original_price"] = f"₹{scraped_mrp:,}"
+                                        print(f"  💰 Scraped MRP ₹{scraped_mrp:,} ({computed_pct}% off)")
+                                else:
+                                    deal["original_price"] = f"₹{scraped_mrp:,}"
+                except Exception:
+                    pass
             if not image_bytes and not is_amazon:
                 # Non-Amazon: og:image scraping (now junk-filtered). Skipped for
                 # Amazon, whose og:image is a logo/sprite, not the product.
                 image_bytes = await fetch_og_image(affiliate_url)
+
+        # Telegram image is the last resort — used only when website scraping found nothing.
+        if not image_bytes and tg_image_bytes:
+            print(f"  📷 Using Telegram image as fallback")
+            image_bytes = tg_image_bytes
+
+        # Copy↔link consistency check for Amazon: if copy mentions product X but the real title
+        # is product Y, it's bait-and-switch (e.g., copy="AirPods Pro" but title="Kitchen Trolley")
+        if amazon_title and not _check_copy_link_consistency(result.get("copy", ""), amazon_title):
+            print(f"  🚫 Copy↔link mismatch: copy='{result.get('copy','')[:50]}' vs title='{amazon_title[:60]}'")
+            await _try_log(sb, {
+                "raw_text": raw_text[:500], "llm_decision": result,
+                "is_valid_deal": False,
+                "filter_reason": f"Copy↔link mismatch: '{amazon_title[:60]}'",
+                "was_posted": False, "source_channel": source_channel,
+                "timestamp_fetched": timestamp_fetched,
+                "copy_quality_score": copy_quality,
+                "quality_reasons": quality_reasons,
+                "affiliate_url": affiliate_url,
+            })
+            return
 
         # Final safety net: never store a known/generic junk image.
         # count=True here — this is the single chokepoint, so each deal tallies once.
@@ -2054,7 +2553,17 @@ async def process_message(
             print(f"  🚫 Dropping junk image before save for {deal_id}")
             image_bytes = None
 
+        # Enrich just before save: clean title + discount fallback.
+        # (Amazon already got its scraped/truthful discount above; this fills the rest.)
+        deal["display_title"] = await generate_display_title(deal.get("copy"))
+        if deal.get("discount_pct") is None:
+            deal["discount_pct"] = (
+                _discount_from_copy(deal.get("copy"))
+                or _discount_from_prices(deal.get("deal_price"), deal.get("original_price"))
+            )
+
         await save_to_db(deal, image_bytes)
+        await post_to_telegram_channel(deal, image_bytes)
 
         await _try_log(sb, {
             "raw_text": raw_text[:500],
@@ -2098,7 +2607,11 @@ async def _try_log(sb, data: dict):
             "affiliate_url": data.get("affiliate_url"),
             "resolved_url":  data.get("resolved_url"),
         }
+        headers = {}
+        internal_key = os.environ.get("INTERNAL_API_KEY", "")
+        if internal_key:
+            headers["X-Internal-Key"] = internal_key
         async with httpx.AsyncClient(timeout=5) as client:
-            await client.post(f"{api_url}/log", json=log_entry)
+            await client.post(f"{api_url}/log", json=log_entry, headers=headers)
     except Exception as e:
         print(f"  [LOG] {type(e).__name__}: {str(e)[:60]}")

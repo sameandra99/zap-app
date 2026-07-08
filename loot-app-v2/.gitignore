@@ -10,12 +10,19 @@ web-build/
 expo-env.d.ts
 
 # Native
+/android
+/ios
 *.orig.*
 *.jks
 *.p8
 *.p12
 *.key
 *.mobileprovision
+
+# Build outputs
+build/
+*.apk
+*.aab
 
 # Metro
 .metro-health-check*
@@ -34,3 +41,6 @@ yarn-error.*
 
 # typescript
 *.tsbuildinfo
+
+# Firebase config (managed as EAS secret GOOGLE_SERVICES_JSON)
+google-services.json

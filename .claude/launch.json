@@ -26,5 +26,11 @@
       "port": 3001,
       "autoPort": true
     }
+  ,{
+      "name": "zap-screenshots",
+      "runtimeExecutable": "bash",
+      "runtimeArgs": ["-c", "cd '/Users/sameandra/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/77899f9f-80ea-4460-bab5-e57ba5f8894c/01633cd8-3329-492f-9e32-e4e2cfd98e3b/skills/web-artifacts-builder/zap-screenshots' && python3 -m http.server 4325"],
+      "port": 4325
+    }
   ]
 }

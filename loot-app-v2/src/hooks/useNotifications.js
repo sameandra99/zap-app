@@ -9,89 +9,72 @@ import { API_BASE } from "../config";
  *   notification. App.js uses this to navigate to the relevant deal.
  *   Signature: (dealId: string) => void
  */
-export function useNotifications(onDealOpen) {
+export function useNotifications(onDealOpen, { requestPermission = false } = {}) {
   useEffect(() => {
-    let unsubscribeForeground = null;
+    // `cancelled` guards the unmount-before-async-resolves race: any unsub
+    // created after cleanup ran is torn down immediately instead of leaking.
+    let cancelled = false;
+    const unsubscribers = [];
+
+    const track = (unsub) => {
+      if (typeof unsub !== "function") return;
+      if (cancelled) unsub();
+      else unsubscribers.push(unsub);
+    };
 
     async function setup() {
       try {
-        // ── 1. Request permission ──────────────────────────────────────────
-        const authStatus = await messaging().requestPermission();
-        const enabled =
-          authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
-          authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+        // ── Message handlers — wired ALWAYS, independent of permission state ──
+        // These are synchronous and must be set up for every user (including
+        // returning, already-onboarded ones) so a notification tap deep-links.
+        // The previous version only wired them when requestPermission was false,
+        // so returning users (requestPermission true on mount) lost deep-linking.
+        track(messaging().onMessage(async (remoteMessage) => {
+          const dealId = remoteMessage.data?.deal_id;
+          if (dealId && onDealOpen) onDealOpen(dealId);
+        }));
 
-        if (!enabled) {
-          console.log("[Push] Permission not granted");
-          return;
+        track(messaging().onNotificationOpenedApp((remoteMessage) => {
+          const dealId = remoteMessage.data?.deal_id;
+          if (dealId && onDealOpen) onDealOpen(dealId);
+        }));
+
+        // ── Permission + token registration — only after onboarding ──────────
+        if (requestPermission) {
+          const authStatus = await messaging().requestPermission();
+          const enabled =
+            authStatus === messaging.AuthorizationStatus.AUTHORIZED ||
+            authStatus === messaging.AuthorizationStatus.PROVISIONAL;
+          if (enabled) {
+            const token = await messaging().getToken();
+            if (token && !cancelled) await registerToken(token);
+            // Keep token fresh (FCM rotates occasionally).
+            track(messaging().onTokenRefresh(async (newToken) => {
+              await registerToken(newToken);
+            }));
+          } else if (__DEV__) {
+            console.log("[Push] Permission not granted");
+          }
         }
 
-        // ── 2. Get & register token ────────────────────────────────────────
-        const token = await messaging().getToken();
-        if (token) {
-          await registerToken(token);
-        }
-
-        // ── 3. Keep token fresh (FCM rotates tokens occasionally) ──────────
-        const unsubscribeRefresh = messaging().onTokenRefresh(async (newToken) => {
-          console.log("[Push] Token refreshed");
-          await registerToken(newToken);
-        });
-
-        // ── 4. Foreground messages ─────────────────────────────────────────
-        // When app is open, FCM does NOT show a notification automatically —
-        // we need to handle display ourselves (or just act on it silently).
-        unsubscribeForeground = messaging().onMessage(async (remoteMessage) => {
-          console.log("[Push] Foreground message:", remoteMessage.messageId);
-          // If there's a deal_id in data, open it immediately (user is in-app)
-          const dealId = remoteMessage.data?.deal_id;
-          if (dealId && onDealOpen) {
-            onDealOpen(dealId);
-          }
-          // New deal → trigger a silent background refresh so the list updates
-          // (HomeScreen's polling will pick it up on next interval anyway, but
-          //  this makes it appear instantly for the in-app user)
-        });
-
-        // ── 5. Background/quit tap handler ────────────────────────────────
-        // User tapped a notification while app was backgrounded
-        messaging().onNotificationOpenedApp((remoteMessage) => {
-          console.log("[Push] App opened from background notification");
-          const dealId = remoteMessage.data?.deal_id;
-          if (dealId && onDealOpen) {
-            onDealOpen(dealId);
-          }
-        });
-
-        // ── 6. Quit-state tap handler ──────────────────────────────────────
-        // User tapped a notification that launched the app from a killed state
+        // ── Quit-state tap (app launched by tapping a notification) ──────────
         const initialNotification = await messaging().getInitialNotification();
-        if (initialNotification) {
-          console.log("[Push] App launched from quit-state notification");
+        if (initialNotification && !cancelled) {
           const dealId = initialNotification.data?.deal_id;
-          if (dealId && onDealOpen) {
-            // Small delay so the UI has time to mount before we try to navigate
-            setTimeout(() => onDealOpen(dealId), 500);
-          }
+          if (dealId && onDealOpen) setTimeout(() => onDealOpen(dealId), 500);
         }
-
-        return unsubscribeRefresh;
       } catch (e) {
-        console.log("[Push] Setup error:", e?.message);
+        if (__DEV__) console.log("[Push] Setup error:", e?.message);
       }
     }
 
-    let unsubscribeRefresh;
-    setup().then((unsub) => {
-      unsubscribeRefresh = unsub;
-    });
+    setup();
 
     return () => {
-      // Cleanup foreground listener on unmount
-      if (unsubscribeForeground) unsubscribeForeground();
-      if (unsubscribeRefresh) unsubscribeRefresh();
+      cancelled = true;
+      unsubscribers.forEach((u) => { try { u(); } catch (_) {} });
     };
-  }, []); // eslint-disable-line react-hooks/exhaustive-deps
+  }, [requestPermission]); // eslint-disable-line react-hooks/exhaustive-deps
 }
 
 /**
@@ -106,11 +89,11 @@ async function registerToken(token) {
       body: JSON.stringify({ token }),
     });
     if (!res.ok) {
-      console.log("[Push] Register failed:", res.status);
+      if (__DEV__) console.log("[Push] Register failed:", res.status);
     } else {
-      console.log("[Push] Token registered");
+      if (__DEV__) console.log("[Push] Token registered");
     }
   } catch (e) {
-    console.log("[Push] Register error:", e?.message);
+    if (__DEV__) console.log("[Push] Register error:", e?.message);
   }
 }

@@ -18,13 +18,32 @@
       "env": {
         "GOOGLE_SERVICES_JSON": "$GOOGLE_SERVICES_JSON"
       }
+    },
+    "production-local": {
+      "android": {
+        "buildType": "app-bundle"
+      },
+      "env": {
+        "GOOGLE_SERVICES_JSON": "./google-services.json"
+      }
+    },
+    "staging-local": {
+      "android": {
+        "buildType": "apk"
+      },
+      "channel": "staging",
+      "env": {
+        "GOOGLE_SERVICES_JSON": "./google-services.json",
+        "APP_VARIANT": "staging",
+        "API_BASE": "https://loot-api.fly.dev"
+      }
     }
   },
   "submit": {
     "production": {
       "android": {
         "serviceAccountKeyPath": "./play-store-key.json",
-        "track": "internal"
+        "track": "alpha"
       }
     }
   }

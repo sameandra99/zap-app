@@ -16,10 +16,10 @@ try {
   messaging().setBackgroundMessageHandler(async (remoteMessage) => {
     // Headless context — no UI work. The OS shows the notification; deep-link
     // data is picked up on next open via getInitialNotification().
-    console.log("[FCM Background] Message received:", remoteMessage?.messageId);
+    if (__DEV__) console.log("[FCM Background] Message received:", remoteMessage?.messageId);
   });
 } catch (e) {
-  console.warn("[FCM] Background handler registration skipped:", e?.message);
+  if (__DEV__) console.warn("[FCM] Background handler registration skipped:", e?.message);
 }
 // ────────────────────────────────────────────────────────────────────────────
 

@@ -10,6 +10,17 @@ primary_region = "bom"  # Mumbai — closest to India
   auto_start_machines = true
   min_machines_running = 1
 
+  # Liveness check — is the process responding? Hits the cheap root route, NOT
+  # /health: restarting the machine can't fix a Supabase outage, so gating
+  # restarts on DB reachability would just flap. /health stays as the deep
+  # readiness probe for external uptime monitoring.
+  [[http_service.checks]]
+    interval = "30s"
+    timeout = "5s"
+    grace_period = "10s"
+    method = "GET"
+    path = "/"
+
 [[vm]]
   memory = "256mb"
   cpu_kind = "shared"

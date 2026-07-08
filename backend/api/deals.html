@@ -1,0 +1,529 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8"/>
+<meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+<meta name="description" content="Today's best deals on Amazon, Flipkart, Myntra and more — curated in real time."/>
+<title>Super Deals — Today's Best Deals in India</title>
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='75' font-size='90'>⚡</text></svg>"/>
+%%GA_BLOCK%%
+<style>
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;background:#F7F5F2;color:#1C1917;-webkit-font-smoothing:antialiased;min-height:100vh}
+.page{max-width:680px;margin:0 auto;padding-bottom:56px}
+
+/* Header */
+.header{padding:20px 20px 0;display:flex;align-items:center;justify-content:space-between}
+.logo{display:flex;align-items:center;gap:8px}
+.logo-bolt{background:#E8571A;border-radius:8px;width:34px;height:34px;display:flex;align-items:center;justify-content:center;font-size:18px;flex-shrink:0}
+.logo-text{font-size:18px;font-weight:900;color:#1C1917;letter-spacing:-0.3px}
+.logo-text span{color:#E8571A}
+.live-dot{display:flex;align-items:center;gap:5px;font-size:12px;color:#A8A29E;font-weight:500}
+.live-dot::before{content:'';width:7px;height:7px;border-radius:50%;background:#16A34A;animation:pulse 2s infinite;flex-shrink:0}
+@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+
+/* Greeting */
+.greeting{padding:14px 20px 16px}
+.greeting-main{font-size:24px;font-weight:800;color:#1C1917;letter-spacing:-0.3px}
+.greeting-sub{font-size:14px;color:#78716C;margin-top:3px;font-weight:500}
+
+.divider{height:1px;background:#ECE7E0;margin:0 20px}
+
+/* Tabs */
+.tabs-wrap{position:sticky;top:0;background:#F7F5F2;z-index:10;padding:14px 0 12px}
+.tabs{display:flex;gap:8px;padding:0 16px;overflow-x:auto;scrollbar-width:none}
+.tabs::-webkit-scrollbar{display:none}
+.tab{flex-shrink:0;padding:8px 14px;border-radius:50px;background:#EEEBE6;border:none;font-size:15px;font-weight:600;color:#78716C;cursor:pointer;font-family:inherit;transition:background .15s,color .15s;white-space:nowrap}
+.tab.active{background:#E8571A;color:#fff;font-weight:700}
+.tab:hover:not(.active){background:#E5E2DC}
+
+/* New deals banner */
+.new-banner{display:flex;justify-content:center;margin-bottom:12px;padding:0 16px}
+.new-banner-btn{background:#1C1917;color:#fff;border:none;border-radius:50px;padding:8px 20px;font-size:13px;font-weight:700;letter-spacing:.3px;cursor:pointer;font-family:inherit;transition:background .15s}
+.new-banner-btn:hover{background:#292524}
+.hidden{display:none!important}
+
+/* Feed */
+.feed{display:flex;flex-direction:column;gap:9px;padding:0 16px}
+
+/* Card */
+.card{background:#fff;border-radius:16px;display:flex;flex-direction:row;overflow:hidden;border:2px solid transparent;box-shadow:0 1px 4px rgba(0,0,0,.06);transition:box-shadow .2s,transform .1s}
+.card:active{transform:scale(.99)}
+@media(hover:hover){.card:hover{box-shadow:0 4px 18px rgba(0,0,0,.10)}}
+.card-body{flex:1;padding:13px;display:flex;flex-direction:column;justify-content:center;min-width:0}
+.card-img-wrap{flex-shrink:0;width:116px;height:116px;align-self:center;margin-right:12px;border-radius:10px;overflow:hidden;background:#F5F3EF;display:flex;align-items:center;justify-content:center}
+.card-img{width:116px;height:116px;object-fit:cover;display:block}
+.card-img-placeholder{font-size:32px}
+
+/* Platform */
+.platform-row{display:flex;align-items:center;gap:6px;margin-bottom:6px}
+.platform-logo{width:18px;height:18px;border-radius:4px;object-fit:contain;flex-shrink:0;display:block}
+.platform-logo-fallback{width:18px;height:18px;border-radius:5px;display:flex;align-items:center;justify-content:center;font-size:11px;font-weight:800;color:#fff;flex-shrink:0}
+.platform-name{font-size:12px;font-weight:700;color:#57534E;letter-spacing:.1px}
+
+/* Title */
+.card-title{font-size:15px;line-height:20px;font-weight:600;color:#292524;margin-bottom:5px;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+
+/* Price */
+.price-row{display:flex;align-items:center;gap:6px;margin-bottom:6px;flex-wrap:wrap}
+.price{font-size:24px;font-weight:800;color:#1C1917;letter-spacing:-.5px;line-height:1}
+.mrp{font-size:13px;color:#A8A29E;text-decoration:line-through;align-self:flex-end;margin-bottom:1px}
+.disc-badge{background:#16A34A;color:#fff;font-size:11px;font-weight:800;padding:2px 7px;border-radius:5px;letter-spacing:.2px}
+
+/* Meta */
+.card-meta{font-size:12px;color:#A8A29E;margin-bottom:10px}
+.meta-popular{color:#B45309;font-weight:700}
+
+/* CTA */
+.cta{display:inline-block;background:#E8E3DC;border-radius:9px;padding:7px 16px;font-size:13px;font-weight:600;color:#44403C;letter-spacing:.2px;text-decoration:none;transition:background .15s;align-self:flex-start}
+.cta:hover{background:#D6CFC8}
+.cta:active{background:#CCC5BD}
+
+/* Load more */
+.load-more-wrap{display:flex;justify-content:center;padding:24px 16px 0}
+.load-more-btn{background:#fff;border:1.5px solid #E5E2DC;border-radius:50px;padding:10px 28px;font-size:14px;font-weight:600;color:#78716C;cursor:pointer;font-family:inherit;transition:background .15s}
+.load-more-btn:hover{background:#F0EDE8}
+.load-more-btn:disabled{opacity:.5;cursor:default}
+
+/* Empty */
+.empty{text-align:center;padding:60px 20px;color:#A8A29E}
+.empty-icon{font-size:40px;margin-bottom:12px}
+.empty-title{font-size:16px;font-weight:700;color:#78716C;margin-bottom:6px}
+.empty-sub{font-size:14px}
+
+/* Skeleton */
+.skeleton{background:#fff;border-radius:16px;height:120px;overflow:hidden;position:relative}
+.skeleton::after{content:'';position:absolute;inset:0;background:linear-gradient(90deg,transparent 0%,rgba(255,255,255,.6) 50%,transparent 100%);animation:shimmer 1.4s ease-in-out infinite}
+@keyframes shimmer{0%{transform:translateX(-100%)}100%{transform:translateX(100%)}}
+
+/* Footer */
+.footer{text-align:center;padding:32px 20px 0;font-size:12px;color:#A8A29E}
+.footer a{color:#A8A29E;text-decoration:none}
+.footer a:hover{color:#78716C}
+
+/* Hamburger */
+.hamburger{background:none;border:none;cursor:pointer;padding:6px;display:flex;flex-direction:column;gap:5px;border-radius:6px;transition:background .15s}
+.hamburger:hover{background:#ECE7E0}
+.hamburger span{display:block;width:20px;height:2px;background:#44403C;border-radius:2px}
+
+/* Drawer overlay */
+.menu-overlay{position:fixed;inset:0;background:rgba(28,25,23,.4);z-index:90;opacity:0;pointer-events:none;transition:opacity .25s}
+.menu-overlay.open{opacity:1;pointer-events:auto}
+
+/* Slide-in drawer */
+.menu-drawer{position:fixed;top:0;right:-310px;width:280px;max-width:85vw;height:100vh;background:#FDFCFB;z-index:100;transition:right .28s cubic-bezier(.4,0,.2,1);display:flex;flex-direction:column;overflow-y:auto;box-shadow:-4px 0 24px rgba(28,25,23,.12)}
+.menu-drawer.open{right:0}
+.menu-head{display:flex;align-items:center;justify-content:space-between;padding:18px 20px;border-bottom:1px solid #ECE7E0}
+.menu-close{background:none;border:none;cursor:pointer;font-size:20px;color:#A8A29E;line-height:1;padding:2px 6px;border-radius:5px;transition:color .15s}
+.menu-close:hover{color:#1C1917}
+.menu-list{list-style:none;padding:10px 0;flex:1}
+.menu-item{display:flex;align-items:center;gap:12px;padding:13px 20px;font-size:15px;font-weight:600;color:#292524;text-decoration:none;transition:background .15s}
+.menu-item:hover{background:#F5F3EF}
+.menu-item-icon{width:34px;height:34px;border-radius:9px;background:#F0EDE8;display:flex;align-items:center;justify-content:center;font-size:16px;flex-shrink:0}
+.menu-divider{height:1px;background:#ECE7E0;margin:6px 20px}
+.menu-footer{padding:16px 20px;font-size:12px;color:#A8A29E}
+
+/* Desktop */
+@media(min-width:640px){
+  .header{padding:28px 24px 0}
+  .greeting{padding:16px 24px 18px}
+  .divider{margin:0 24px}
+  .tabs{padding:0 20px}
+  .feed{padding:0 20px}
+  .load-more-wrap{padding:28px 20px 0}
+  .greeting-main{font-size:28px}
+  .price{font-size:26px}
+  .card-img-wrap{width:128px;height:128px}
+  .card-img{width:128px;height:128px}
+}
+</style>
+</head>
+<body>
+
+<!-- Drawer overlay -->
+<div class="menu-overlay" id="menu-overlay"></div>
+
+<!-- Slide-in drawer -->
+<nav class="menu-drawer" id="menu-drawer" aria-label="Site menu">
+  <div class="menu-head">
+    <div class="logo">
+      <div class="logo-bolt">⚡</div>
+      <div class="logo-text">Super <span>Deals</span></div>
+    </div>
+    <button class="menu-close" id="menu-close" aria-label="Close menu">✕</button>
+  </div>
+  <ul class="menu-list">
+    <li><a href="https://play.google.com/store/apps/details?id=com.zapdeals.app" target="_blank" rel="noopener" class="menu-item">
+      <span class="menu-item-icon">📱</span>Download the App
+    </a></li>
+    <li><a href="#" class="menu-item" id="tg-link">
+      <span class="menu-item-icon">📢</span>Join Telegram Channel
+    </a></li>
+    <div class="menu-divider"></div>
+    <li><a href="/privacy" class="menu-item">
+      <span class="menu-item-icon">🔒</span>Privacy Policy
+    </a></li>
+    <li><a href="mailto:hello@super-deals.in" class="menu-item">
+      <span class="menu-item-icon">✉️</span>Contact Us
+    </a></li>
+  </ul>
+  <div class="menu-footer">© 2025 Super Deals · super-deals.in</div>
+</nav>
+
+<div class="page">
+  <div class="header">
+    <div class="logo">
+      <div class="logo-bolt">⚡</div>
+      <div class="logo-text">Super <span>Deals</span></div>
+    </div>
+    <div style="display:flex;align-items:center;gap:12px">
+      <div class="live-dot">Live deals</div>
+      <button class="hamburger" id="hamburger" aria-label="Open menu">
+        <span></span><span></span><span></span>
+      </button>
+    </div>
+  </div>
+
+  <div class="greeting">
+    <div class="greeting-main" id="greeting"></div>
+    <div class="greeting-sub">Here are today's best deals for you</div>
+  </div>
+
+  <div class="divider"></div>
+
+  <div class="tabs-wrap">
+    <div class="tabs" id="tabs">
+      <div class="skeleton" style="width:90px;height:36px;border-radius:50px;flex-shrink:0"></div>
+      <div class="skeleton" style="width:70px;height:36px;border-radius:50px;flex-shrink:0;opacity:.6"></div>
+      <div class="skeleton" style="width:100px;height:36px;border-radius:50px;flex-shrink:0;opacity:.4"></div>
+    </div>
+  </div>
+
+  <div class="new-banner hidden" id="new-banner">
+    <button class="new-banner-btn" id="new-banner-btn">↑ <span id="new-count">0</span> new deals</button>
+  </div>
+
+  <div class="feed" id="feed">
+    <div class="skeleton"></div>
+    <div class="skeleton" style="opacity:.7;height:140px"></div>
+    <div class="skeleton" style="opacity:.4"></div>
+  </div>
+
+  <div class="load-more-wrap hidden" id="load-more-wrap">
+    <button class="load-more-btn" id="load-more-btn">Load more deals</button>
+  </div>
+
+  <div class="footer">
+    <p>© 2025 Super Deals · <a href="/privacy">Privacy Policy</a> · <a href="https://super-deals.in">super-deals.in</a></p>
+  </div>
+</div>
+
+<script>
+// ── Analytics helpers ────────────────────────────────────────────────────────
+function _deviceType() {
+  const w = window.innerWidth;
+  return w < 640 ? 'mobile' : w < 1024 ? 'tablet' : 'desktop';
+}
+function _ga(event, params) {
+  if (typeof gtag !== 'function') return;
+  gtag('event', event, { device_type: _deviceType(), ...params });
+}
+
+const PLATFORM = {
+  amazon:   {name:'Amazon',  color:'#FF9900',initial:'A', logo:'/logos/amazon.png'},
+  flipkart: {name:'Flipkart',color:'#2874F0',initial:'F', logo:'/logos/flipkart.png'},
+  myntra:   {name:'Myntra',  color:'#FF3F6C',initial:'M', logo:'/logos/myntra.png'},
+  ajio:     {name:'AJIO',    color:'#2E2E2E',initial:'A', logo:'/logos/ajio.png'},
+  nykaa:    {name:'Nykaa',   color:'#E5006E',initial:'N', logo:'/logos/nykaa.png'},
+  meesho:   {name:'Meesho',  color:'#9C27B0',initial:'M', logo:'/logos/meesho.png'},
+  zepto:    {name:'Zepto',   color:'#7B2FF7',initial:'Z', logo:'/logos/zepto.png'},
+  blinkit:  {name:'Blinkit', color:'#F8CB46',initial:'B', logo:'/logos/blinkit.png'},
+};
+const PM = p => PLATFORM[(p||'').toLowerCase()] || {name:'Deal',color:'#78716C',initial:'?', logo:null};
+
+const RE_FOOTWEAR    = /\b(shoe|sneaker|sandal|boot|slipper|footwear|loafer|heel|flip.?flop|slide|crocs|floater)s?\b/;
+const RE_BEAUTY      = /lipstick|foundation|serum|moistur|sunscreen|face.?wash|shampoo|conditioner|hair.?oil|perfume|fragrance|deodorant|mascara|kajal|eyeliner|skincare|haircare|body.?lotion|face.?mask|sheet mask|peel.?off|beauty|makeup|make.?up|\bcream\b|lip balm|nail|cosmetic|grooming|trimmer|shaver|razor/;
+const RE_ELECTRONICS = /phone|laptop|earphone|earbud|headset|headphone|speaker|tws|duopod|neckband|soundbar|\btv\b|television|camera|tablet|ipad|smartwatch|smart watch|charger|cable|power.?bank|keyboard|mouse|monitor|router|wifi|\bled\b|bulb|\bfan\b|\bac\b|air.?condition|air.?cooler|cooler|washing machine|refrigerator|fridge|microwave|mixer|grinder|blender|\biron\b|vacuum|bluetooth|\bssd\b|\bram\b|graphics|macbook|imac|adapter|extension|geyser|water heater|kettle|toaster|induction|purifier|electric|zebronics|polycab|boat|projector|printer|gaming|console|electronics|samsung|oneplus|redmi|iphone|galaxy|\bnord\b|\d+\s?kg.*star/;
+const RE_HOME        = /cookware|pressure.?cook|vessel|\bpan\b|\bpot\b|kitchen|bedsheet|pillow|mattress|curtain|cleaning|\bmop\b|broom|storage|container|\bjar\b|dinner set|flask|bottle|lunch.?box|tiffin|crusher|wall clock|air fryer|french press|\bcup\b|plate|bowl|spoon|cutlery|napkin|towel|blanket|quilt|\bbag\b|backpack|organiser|rack|hook|holder|basket|hanger|bedding|home|furnish|laundry|duster|melamine|steel|borosil|milton|cello|pigeon|prestige|wonderchef|waffle|lantern/;
+const RE_SPORTS      = /dumbbell|\bgym\b|yoga|cycle|treadmill|fitness|sports|cricket|football|badminton|swimming|whey|protein|nutrition|weight machine|boldfit|muscle|workout|racket|skipping|abs roller/;
+const RE_GROCERY     = /chocolate|cookie|biscuit|coffee|\btea\b|\boil\b|snack|namkeen|cadbury|unibic|vedaka|grocery|atta|rice|sugar|spice|masala|noodle|pasta|sauce|honey|dry fruit|almond|cashew|ghee|\bfood\b|diaper|pampers/;
+const RE_FASHION     = /shirt|t.?shirt|jeans|trouser|dress|kurta|kurti|saree|legging|jacket|hoodie|sweater|coat|\bbelt\b|wallet|watch|sunglass|ethnic|clothing|apparel|co.?ord|joggers|cargo|shorts|winterwear|blazer|innerwear|socks|\bbra\b|lingerie|jewel|earring|necklace|bangle|fashion|wide leg|raymond|libas|mufti|levis|adidas|originals|uspa|polo/;
+
+function inferCategory(d) {
+  const t = (d.copy||'').toLowerCase();
+  const p = (d.platform||'').toLowerCase();
+  if(RE_FOOTWEAR.test(t))    return 'footwear';
+  if(RE_BEAUTY.test(t))      return 'beauty';
+  if(RE_ELECTRONICS.test(t)) return 'electronics';
+  if(RE_HOME.test(t))        return 'home';
+  if(RE_SPORTS.test(t))      return 'sports';
+  if(RE_GROCERY.test(t))     return 'grocery';
+  if(RE_FASHION.test(t))     return 'fashion';
+  if(['zepto','blinkit'].includes(p)) return 'home';
+  return 'other';
+}
+
+function fmtINR(v) {
+  const n = parseInt(String(v||'').replace(/\D/g,''),10);
+  return n ? '₹'+n.toLocaleString('en-IN') : null;
+}
+function parseTS(s) {
+  s = String(s).trim();
+  return new Date(/[zZ]$|[+-]\d{2}:?\d{2}$/.test(s) ? s : s.replace(' ','T')+'Z').getTime();
+}
+function ago(dateStr) {
+  if(!dateStr) return '';
+  try {
+    const m = Math.floor((Date.now()-parseTS(dateStr))/60000);
+    if(isNaN(m)||m<2) return 'just now';
+    if(m<60) return m+'m ago';
+    const h=Math.floor(m/60);
+    if(h<24) return h+'h ago';
+    return Math.floor(h/24)+'d ago';
+  } catch{return '';}
+}
+function cleanTitle(copy) {
+  if(!copy) return '';
+  let t=String(copy).replace(/\*\*/g,'');
+  const cut=t.search(/\s+(?:at|for|@)\s*(?:₹|rs\.?|\d)|\s*[—-]\s*(?:₹|rs\.?|\d+\s*%)|\s*₹\s*[\d,]+|\b\d+\s*%\s*off|\bmin\.?\s*\d|\bup\s*to\b|\(use|\bcoupon\b|,\s*rs\.?/i);
+  if(cut>8) t=t.slice(0,cut);
+  return t.replace(/[\s.,:;–—-]+$/,'').trim()||String(copy).replace(/\*\*/g,'');
+}
+function parseCoupon(copy) {
+  const m=(copy||'').match(/\b(?:use\s+(?:code|coupon)\s*[:\-]?\s*|code\s*[:\-]\s*)([A-Z0-9]{3,15})\b/i);
+  return m?m[1].toUpperCase():null;
+}
+function esc(s){return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;');}
+
+function getGreeting() {
+  const h=new Date().getHours();
+  if(h<4)  return 'Night owl? 🦉';
+  if(h<7)  return 'Early bird! 🐦';
+  if(h<12) return 'Morning deals ☀️';
+  if(h<14) return 'Lunch break? 🍱';
+  if(h<17) return 'Afternoon loot 🎯';
+  if(h<20) return 'Happy hour deals 🍻';
+  return "Tonight's picks 🛍️";
+}
+document.getElementById('greeting').textContent = getGreeting();
+
+function renderCard(d, position) {
+  const pm = PM(d.platform);
+  const dpN = d.deal_price ? parseInt(String(d.deal_price).replace(/\D/g,''),10) : 0;
+  const opN = d.original_price ? parseInt(String(d.original_price).replace(/\D/g,''),10) : 0;
+  let price = dpN ? fmtINR(dpN) : null;
+  if(!price) { const m=(d.copy||'').match(/(?:₹|rs\.?)\s*([\d,]+)/i); if(m) price=fmtINR(parseInt(m[1].replace(/,/g,''),10)); }
+  const mrp  = (opN>dpN&&dpN>0) ? fmtINR(opN) : null;
+  const disc = d.discount_pct ? parseInt(d.discount_pct,10) : null;
+  const when = ago(d.created_at);
+  const popular = (d.clicks||0)>=25;
+
+  const dt=(d.display_title||'').trim();
+  const lines=dt.split('\n').map(l=>l.trim()).filter(Boolean);
+  const pLine=lines[0]||cleanTitle(d.copy);
+  const isCouponLine=l=>l&&/^use\s+[A-Z0-9]{3,}/i.test(l);
+  const coupon=isCouponLine(lines[1])?lines[1]:(parseCoupon(d.copy)?`Use ${parseCoupon(d.copy)}`:null);
+  const title=coupon?`${pLine} · ${coupon}`:pLine;
+
+  const imgHtml=d.image_url
+    ?`<img class="card-img" src="${esc(d.image_url)}" alt="" loading="lazy" onerror="this.parentElement.innerHTML='<div class=card-img-placeholder>🛍️</div>'">`
+    :`<div class="card-img-placeholder">🛍️</div>`;
+
+  const priceHtml=(price||disc!=null)?`<div class="price-row">
+    ${price?`<span class="price">${esc(price)}</span>`:''}
+    ${mrp?`<span class="mrp">${esc(mrp)}</span>`:''}
+    ${disc!=null?`<span class="disc-badge">${disc}% OFF</span>`:''}
+  </div>`:'';
+
+  const metaHtml=`<div class="card-meta">${popular?`<span class="meta-popular">Popular today</span>${when?'  ·  ':''}`:''}${when?`Added ${when}`:''}</div>`;
+
+  const url=esc(d.affiliate_url||'#');
+  const clickFn=d.affiliate_url
+    ?`onclick="_onDealClick('${esc(String(d.id))}','${esc(d.platform||'')}',${position??0},${disc??'null'})"`
+    :'';
+
+  const logoHtml = pm.logo
+    ? `<img class="platform-logo" src="${pm.logo}" alt="${esc(pm.name)}" onerror="this.outerHTML='<div class=platform-logo-fallback style=background:${pm.color}>${pm.initial}</div>'">`
+    : `<div class="platform-logo-fallback" style="background:${pm.color}">${pm.initial}</div>`;
+
+  return `<div class="card">
+    <div class="card-body">
+      <div class="platform-row">
+        ${logoHtml}
+        <span class="platform-name">${esc(pm.name)}</span>
+      </div>
+      <div class="card-title">${esc(title)}</div>
+      ${priceHtml}
+      ${metaHtml}
+      <a class="cta" href="${url}" target="_blank" rel="noopener noreferrer" ${clickFn}>Grab Deal →</a>
+    </div>
+    <div class="card-img-wrap">${imgHtml}</div>
+  </div>`;
+}
+
+// State
+let allDeals=[], visibleTabs=[], activeTabKey=null, rawTabs=[];
+let offset=0, hasMore=true, newBuffer=[];
+const LIMIT=50, MIN_TAB=3;
+
+function filterDeals(deals, tabKey) {
+  const tab=visibleTabs.find(t=>t.key===tabKey);
+  if(!tab||tab.type==='all') return deals;
+  if(tab.type==='hot') {
+    const hot=deals.filter(d=>d.pinned);
+    return hot.sort((a,b)=>{
+      const ap=a.pin_order!=null?a.pin_order:null, bp=b.pin_order!=null?b.pin_order:null;
+      if(ap==null&&bp==null) return new Date(b.created_at)-new Date(a.created_at);
+      if(ap==null) return -1; if(bp==null) return 1;
+      return ap-bp;
+    });
+  }
+  if(tab.type==='category') {
+    const val=(tab.value||'').toLowerCase();
+    return deals.filter(d=>inferCategory(d)===val);
+  }
+  return deals;
+}
+
+function buildVisibleTabs() {
+  const counts={};
+  allDeals.forEach(d=>{const k=inferCategory(d);counts[k]=(counts[k]||0)+1;});
+  const hasHot=allDeals.some(d=>d.pinned);
+  return rawTabs.filter(t=>{
+    if(t.type==='all') return true;
+    if(t.type==='hot') return hasHot;
+    if(t.type==='category') return (counts[(t.value||'').toLowerCase()]||0)>=MIN_TAB;
+    return false;
+  });
+}
+
+function renderTabs() {
+  visibleTabs=buildVisibleTabs();
+  if(!activeTabKey||!visibleTabs.find(t=>t.key===activeTabKey))
+    activeTabKey=visibleTabs[0]?.key||null;
+  document.getElementById('tabs').innerHTML=visibleTabs.map(t=>`
+    <button class="tab${activeTabKey===t.key?' active':''}" onclick="switchTab('${esc(t.key)}')">
+      ${t.type==='all'?'⚡ ':''}${esc(t.label)}
+    </button>`).join('');
+}
+
+function renderFeed() {
+  const deals=filterDeals(allDeals,activeTabKey);
+  const feed=document.getElementById('feed');
+  feed.innerHTML=deals.length
+    ? deals.map((d,i)=>renderCard(d,i)).join('')
+    : `<div class="empty"><div class="empty-icon">🔍</div><div class="empty-title">No deals here yet</div><div class="empty-sub">Check back soon!</div></div>`;
+
+  const activeTab=visibleTabs.find(t=>t.key===activeTabKey);
+  const lmw=document.getElementById('load-more-wrap');
+  lmw.className=activeTab?.type==='all'&&hasMore?'load-more-wrap':'load-more-wrap hidden';
+}
+
+window.switchTab = function(key) {
+  const tab=visibleTabs.find(t=>t.key===key);
+  _ga('tab_switch',{tab_name:tab?.label||key, tab_type:tab?.type||'unknown'});
+  activeTabKey=key;
+  hideBanner();
+  renderTabs();
+  renderFeed();
+};
+
+window._onDealClick = function(dealId, platform, position, discountPct) {
+  fetch(`/deals/${dealId}/click`,{method:'POST'}).catch(()=>{});
+  const tab=visibleTabs.find(t=>t.key===activeTabKey);
+  _ga('deal_click',{
+    deal_id: dealId,
+    platform: platform,
+    tab_name: tab?.label||activeTabKey,
+    position: position,
+    discount_pct: discountPct,
+  });
+};
+
+function showBanner(n) {
+  const tab=visibleTabs.find(t=>t.key===activeTabKey);
+  if(tab?.type!=='all') return;
+  document.getElementById('new-count').textContent=n;
+  document.getElementById('new-banner').classList.remove('hidden');
+}
+function hideBanner() {
+  document.getElementById('new-banner').classList.add('hidden');
+  newBuffer=[];
+}
+
+document.getElementById('new-banner-btn').addEventListener('click',()=>{
+  _ga('new_deals_tap',{new_count:newBuffer.length});
+  allDeals=[...newBuffer,...allDeals];
+  hideBanner();
+  renderTabs();
+  renderFeed();
+  window.scrollTo({top:0,behavior:'smooth'});
+});
+
+document.getElementById('load-more-btn').addEventListener('click', async()=>{
+  const tab=visibleTabs.find(t=>t.key===activeTabKey);
+  _ga('load_more_click',{tab_name:tab?.label||activeTabKey, offset});
+  const btn=document.getElementById('load-more-btn');
+  btn.disabled=true; btn.textContent='Loading…';
+  offset+=LIMIT;
+  const more=await fetchDeals(offset);
+  if(more.length<LIMIT) hasMore=false;
+  allDeals=[...allDeals,...more];
+  renderTabs(); renderFeed();
+  _ga('deals_loaded',{count:more.length, is_initial:false, offset});
+  btn.disabled=false; btn.textContent='Load more deals';
+});
+
+async function fetchDeals(off=0) {
+  try {
+    const r=await fetch(`/deals?limit=${LIMIT}&offset=${off}`);
+    const d=await r.json();
+    return d.deals||d||[];
+  } catch{return[];}
+}
+
+async function pollNew() {
+  try {
+    const fresh=await fetchDeals(0);
+    if(!fresh.length||!allDeals.length) return;
+    const knownIds=new Set(allDeals.map(d=>String(d.id)));
+    const newOnes=fresh.filter(d=>!knownIds.has(String(d.id)));
+    if(newOnes.length) { newBuffer=newOnes; showBanner(newOnes.length); }
+  } catch{}
+}
+
+async function init() {
+  if (typeof gtag === 'function') {
+    gtag('set', 'user_properties', {device_type: _deviceType()});
+  }
+  const [tabsRes, deals] = await Promise.all([
+    fetch('/tabs').then(r=>r.json()).catch(()=>({tabs:[]})),
+    fetchDeals(0)
+  ]);
+  rawTabs=(tabsRes.tabs||[]).filter(t=>t.enabled);
+  if(!rawTabs.length) rawTabs=[{key:'latest',type:'all',label:'Latest',enabled:true}];
+  allDeals=deals;
+  hasMore=deals.length>=LIMIT;
+  renderTabs();
+  renderFeed();
+  const initTab=visibleTabs.find(t=>t.key===activeTabKey);
+  _ga('deals_loaded',{count:deals.length, is_initial:true, offset:0, tab_name:initTab?.label||activeTabKey});
+  setInterval(pollNew, 60000);
+}
+
+init();
+
+// Hamburger menu
+const _hamburger = document.getElementById('hamburger');
+const _drawer    = document.getElementById('menu-drawer');
+const _overlay   = document.getElementById('menu-overlay');
+const _menuClose = document.getElementById('menu-close');
+function openMenu()  { _drawer.classList.add('open'); _overlay.classList.add('open'); document.body.style.overflow='hidden'; }
+function closeMenu() { _drawer.classList.remove('open'); _overlay.classList.remove('open'); document.body.style.overflow=''; }
+_hamburger.addEventListener('click', openMenu);
+_menuClose.addEventListener('click', closeMenu);
+_overlay.addEventListener('click', closeMenu);
+document.addEventListener('keydown', e => { if(e.key==='Escape') closeMenu(); });
+</script>
+</body>
+</html>

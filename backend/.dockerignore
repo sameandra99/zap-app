@@ -5,3 +5,8 @@ venv/
 __pycache__/
 *.pyc
 .git/
+# Secrets — never bake into the image (loaded from fly secrets at runtime)
+firebase-service-account.json
+*service-account*.json
+play-store-key.json
+*.key

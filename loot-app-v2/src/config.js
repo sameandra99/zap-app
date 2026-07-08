@@ -1,9 +1,16 @@
 // ── API config ────────────────────────────────────────────────────────────────
-// When testing on your phone via Expo Go, your phone and Mac must be on
-// the same WiFi. Use your Mac's local IP (not localhost).
-// Run `ipconfig getifaddr en0` in Terminal to get it.
+// API_BASE is injected at build time via app.config.js → extra.apiBase, so a
+// staging build can point at a local backend without editing source.
+//   • Production build → https://loot-api.fly.dev (default)
+//   • Staging build    → set API_BASE env at build time (e.g. your Mac's LAN IP)
+// Phone + Mac must be on the same WiFi for a LAN backend to be reachable.
+import Constants from "expo-constants";
 
-export const API_BASE = "https://loot-api.fly.dev";
+const PROD_API = "https://loot-api.fly.dev";
+export const API_BASE =
+  Constants?.expoConfig?.extra?.apiBase ||
+  Constants?.manifest?.extra?.apiBase ||
+  PROD_API;
 
 export const COLORS = {
   bg:      "#F7F4EF",

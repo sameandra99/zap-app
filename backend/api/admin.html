@@ -34,7 +34,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dom-btn.approve:hover{background:#BBF7D0}
 .dom-btn.block{background:#FEE2E2;color:#B91C1C}
 .dom-btn.block:hover{background:#FECACA}
-.tab:not(.active-all):not(.active-posted):not(.active-filtered){background:#F0EDE8;color:#78716C}
+.tab:not(.active-all):not(.active-posted):not(.active-filtered):not(.active-linkops):not(.active-domains):not(.active-apptabs):not(.active-hot){background:#F0EDE8;color:#78716C}
+.tab.active-hot{background:#D97706;color:#fff}
 .toolbar{display:flex;align-items:center;gap:8px;padding:12px 20px;background:#fff}
 .toolbar input{flex:1;padding:7px 12px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit}
 .btn-refresh{padding:7px 14px;border-radius:6px;background:#F0EDE8;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
@@ -92,6 +93,23 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
 .btn-push:hover{background:#FCD9C5}
 .btn-push:disabled{opacity:.5;cursor:not-allowed}
 .btn-push.sent{background:#DCFCE7;color:#15803D}
+.btn-pin{padding:4px 10px;border-radius:4px;background:#FEF3C7;color:#B45309;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s ease}
+.btn-pin:hover{background:#FDE68A}
+.btn-pin:disabled{opacity:.5;cursor:not-allowed}
+.btn-pin.pinned{background:#F59E0B;color:#fff}
+.btn-pin.pinned:hover{background:#D97706}
+/* App Tabs config */
+.apptab-move{padding:2px 8px;margin-right:4px;border-radius:4px;background:#F0EDE8;color:#57534E;border:none;font-size:11px;cursor:pointer}
+.apptab-move:hover{background:#E7E2DB}
+.apptab-move:disabled{opacity:.35;cursor:not-allowed}
+.apptab-rename{margin-left:8px;padding:2px 7px;border-radius:4px;background:#F0EDE8;color:#78716C;border:none;font-size:12px;cursor:pointer}
+.apptab-rename:hover{background:#E7E2DB}
+.apptab-type{display:inline-block;padding:2px 9px;border-radius:20px;font-size:11px;font-weight:700}
+.apptab-toggle{padding:5px 16px;border-radius:20px;background:#F5F5F4;color:#A8A29E;border:1px solid #E7E5E4;font-size:12px;font-weight:700;cursor:pointer;min-width:54px;transition:all 0.15s ease}
+.apptab-toggle:hover{background:#ECEAE8}
+.apptab-toggle.on{background:#16A34A;color:#fff;border-color:#16A34A}
+.apptab-toggle.on:hover{background:#15803D}
+.apptab-toggle:disabled{opacity:.6;cursor:not-allowed}
 .raw-text-modal{max-height:200px;overflow-y:auto;padding:8px;border:1px solid #EEE;border-radius:6px;background:#F7F5F2;font-size:11px;white-space:pre-wrap;word-break:break-word;font-family:monospace}
 
 /* Link Ops Tab */
@@ -100,6 +118,28 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
 .url-cell.affiliate{background:#DCFCE7;color:#15803D}
 .url-cell.zap{background:#E0F2FE;color:#0369A1}
 .url-cell.empty{background:#F9F9F9;color:#C9B8B3;cursor:default}
+/* Hot Deals ranking cards */
+.hot-list{display:flex;flex-direction:column;gap:10px}
+.hot-card{background:#fff;border-radius:12px;padding:14px 16px;display:flex;align-items:center;gap:12px;box-shadow:0 1px 3px rgba(0,0,0,.06);border:2px solid transparent;transition:border-color .15s}
+.hot-card:hover{border-color:#FDE68A}
+.hot-rank{font-size:26px;font-weight:900;color:#E8571A;min-width:44px;text-align:center;letter-spacing:-1px;flex-shrink:0}
+.hot-move{display:flex;flex-direction:column;gap:4px;flex-shrink:0}
+.hot-img-wrap{flex-shrink:0}
+.hot-img-wrap img{width:120px;height:120px;object-fit:cover;border-radius:10px;background:#F0EDE8;display:block}
+.hot-img-placeholder{width:120px;height:120px;background:#F0EDE8;border-radius:10px;display:flex;align-items:center;justify-content:center;font-size:36px}
+.hot-info{flex:1;min-width:0}
+.hot-plat{font-size:10px;font-weight:700;color:#A8A29E;text-transform:uppercase;letter-spacing:.5px;margin-bottom:3px}
+.hot-title{font-size:14px;font-weight:600;color:#1C1917;line-height:1.35;margin-bottom:6px;overflow:hidden;display:-webkit-box;-webkit-line-clamp:3;-webkit-box-orient:vertical}
+.hot-price-row{display:flex;align-items:baseline;gap:8px;flex-wrap:wrap;margin-bottom:4px}
+.hot-price{font-size:20px;font-weight:800;color:#1C1917;letter-spacing:-.5px}
+.hot-mrp{font-size:13px;color:#A8A29E;text-decoration:line-through}
+.hot-disc{background:#16A34A;color:#fff;font-size:10px;font-weight:800;padding:2px 7px;border-radius:4px}
+.hot-when{font-size:11px;color:#A8A29E;margin-top:4px}
+.hot-drag-handle{cursor:grab;font-size:20px;color:#C9B8B3;padding:0 6px;flex-shrink:0;user-select:none;line-height:1}
+.hot-drag-handle:hover{color:#78716C}
+.hot-card[draggable]{cursor:default}
+.hot-card.hot-drag-over{border-color:#E8571A!important;background:#FFF7ED}
+.hot-card.hot-dragging{opacity:.35}
 </style>
 </head>
 <body>
@@ -123,6 +163,8 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
   <button class="tab" onclick="setTab('filtered',this)">❌ Filtered</button>
   <button class="tab" onclick="setTab('linkops',this)">🔗 Link Ops</button>
   <button class="tab" onclick="setTab('domains',this)">🌐 Domains <span id="pendingDot" style="display:none;background:#DC2626;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px"></span></button>
+  <button class="tab" onclick="setTab('apptabs',this)">🗂 App Tabs</button>
+  <button class="tab" onclick="setTab('hot',this)">🔥 Hot Deals</button>
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="Search deals, channels, reasons..." oninput="render()"/>
@@ -140,9 +182,29 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
     <input type="hidden" id="modalDealId"/>
     <input type="hidden" id="modalLogIndex"/>
     <input type="hidden" id="modalMode"/>
+    <input type="hidden" id="modalPlatform"/>
+    <input type="hidden" id="modalUrl"/>
 
-    <label>Copy</label>
+    <label>Title <span style="font-weight:400;color:#A8A29E">(product name shown on the card)</span></label>
+    <input type="text" id="modalDisplayTitle" placeholder="e.g. Samsung Galaxy S25 Ultra 5G"/>
+
+    <label>Description / Copy</label>
     <textarea id="modalCopy" rows="3"></textarea>
+
+    <div style="display:flex;gap:10px">
+      <div style="flex:1">
+        <label>Deal Price (₹)</label>
+        <input type="text" id="modalDealPrice" placeholder="e.g. 11,657"/>
+      </div>
+      <div style="flex:1">
+        <label>MRP (₹) <span style="font-weight:400;color:#A8A29E">opt.</span></label>
+        <input type="text" id="modalMrp" placeholder="e.g. 15,999"/>
+      </div>
+      <div style="flex:0 0 120px">
+        <label>Discount (%)</label>
+        <input type="text" id="modalDiscount" placeholder="1-99"/>
+      </div>
+    </div>
 
     <label>Image URL</label>
     <input type="text" id="modalImageUrl" placeholder="https://..." oninput="previewImg()"/>
@@ -166,6 +228,9 @@ let allLogs = [];
 let allDeals = [];
 let allLinkOps = [];
 let allDomains = [];
+let allTabs = [];
+let allHotDeals = [];
+let _hotDragId = null;
 let linkOpsStatus = 'posted';  // Link Ops status filter — default to what users actually see
 
 const STATUS_META = {
@@ -184,16 +249,20 @@ function setLinkOpsStatus(s) {
 
 async function load(showSpinner = true) {
   if (showSpinner) document.getElementById('content').innerHTML = '<div class="empty">Loading...</div>';
-  const [logsRes, dealsRes, linkOpsRes, domainsRes] = await Promise.all([
+  const [logsRes, dealsRes, linkOpsRes, domainsRes, tabsRes, hotRes] = await Promise.all([
     fetch('/admin/logs?limit=300').then(r=>r.json()).catch(()=>({logs:[]})),  // Live logs only
     fetch('/admin/deals?limit=300').then(r=>r.json()).catch(()=>({deals:[]})),
     fetch('/admin/link-ops?limit=300').then(r=>r.json()).catch(()=>({operations:[]})),
     fetch('/admin/redirect-domains').then(r=>r.json()).catch(()=>({domains:[]})),
+    fetch('/admin/tabs').then(r=>r.json()).catch(()=>({tabs:[]})),
+    fetch('/admin/hot-deals').then(r=>r.json()).catch(()=>({deals:[]})),
   ]);
   allLogs = logsRes.logs || [];
   allDeals = dealsRes.deals || [];
   allLinkOps = linkOpsRes.operations || [];
   allDomains = domainsRes.domains || [];
+  allTabs = tabsRes.tabs || [];
+  allHotDeals = hotRes.deals || [];
 
   // Pending-domain alert dot on the Domains tab
   const pendingCount = allDomains.filter(d => d.status === 'pending').length;
@@ -251,6 +320,14 @@ function render() {
   // Special case for Domains tab
   if (activeTab === 'domains') {
     return renderDomains(q);
+  }
+  // Special case for App Tabs config
+  if (activeTab === 'apptabs') {
+    return renderAppTabs();
+  }
+  // Special case for Hot Deals ranking
+  if (activeTab === 'hot') {
+    return renderHotDeals();
   }
 
   let items = [];
@@ -328,8 +405,10 @@ function render() {
             ? `<div class="img-cell"><img class="img-thumb" src="${esc(imgUrl)}" onerror="this.style.display='none'"/></div>`
             : `<div class="img-cell"><div class="img-placeholder">🛍</div></div>`;
 
+          const isPinned = !!l.pinned;
           const actions = isPosted || isApproved
             ? `<div class="actions">
+                <button class="btn-pin${isPinned ? ' pinned' : ''}" onclick="togglePin(this, '${esc(dealId)}', ${isPinned})">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>
                 <button class="btn-push" onclick="pushDeal(this, '${esc(dealId)}', ${JSON.stringify(copy).replace(/"/g,'&quot;')})">📤 Push</button>
                 <button class="btn-edit" onclick="openEdit('${esc(dealId)}', -1, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✏️ Edit</button>
                 <button class="btn-remove" onclick="removeDeal('${esc(dealId)}')">🗑 Remove</button>
@@ -582,7 +661,15 @@ async function generateAndApprove(logIndex, raw) {
       document.getElementById('modalTitle').textContent = '✨ Auto-Generated - Review & Save';
       document.getElementById('modalCopy').value = result.copy || '';
       document.getElementById('modalImageUrl').value = result.image_url || '';
+      document.getElementById('modalPlatform').value = result.platform || '';
+      document.getElementById('modalUrl').value = result.url || '';
       document.getElementById('modalRawDisplay').textContent = raw;
+      // Price/title/discount aren't part of the generate flow — clear any stale
+      // values left over from a previous edit so they don't bleed in.
+      document.getElementById('modalDisplayTitle').value = '';
+      document.getElementById('modalDealPrice').value = '';
+      document.getElementById('modalMrp').value = '';
+      document.getElementById('modalDiscount').value = '';
       previewImg();
       document.getElementById('editModal').classList.add('open');
       showToast('✅ Copy & image generated!');
@@ -599,13 +686,21 @@ async function generateAndApprove(logIndex, raw) {
 }
 
 function openEdit(dealId, logIndex, copy, imageUrl, raw) {
+  // Pull the full deal so we can edit title/price/MRP/discount, not just copy.
+  const deal = dealId ? allDeals.find(d => String(d.id) === String(dealId)) : null;
   document.getElementById('modalDealId').value = dealId;
   document.getElementById('modalLogIndex').value = logIndex;
+  document.getElementById('modalPlatform').value = '';
+  document.getElementById('modalUrl').value = '';
   document.getElementById('modalMode').value = dealId ? 'edit' : 'approve';
   document.getElementById('modalTitle').textContent = dealId ? 'Edit Deal' : 'Approve & Edit';
-  document.getElementById('modalCopy').value = copy;
-  document.getElementById('modalImageUrl').value = imageUrl;
-  document.getElementById('modalRawDisplay').textContent = raw;
+  document.getElementById('modalDisplayTitle').value = (deal && deal.display_title) || '';
+  document.getElementById('modalCopy').value = copy || '';
+  document.getElementById('modalDealPrice').value = (deal && deal.deal_price) || '';
+  document.getElementById('modalMrp').value = (deal && deal.original_price) || '';
+  document.getElementById('modalDiscount').value = (deal && deal.discount_pct != null) ? deal.discount_pct : '';
+  document.getElementById('modalImageUrl').value = imageUrl || '';
+  document.getElementById('modalRawDisplay').textContent = raw || '';
   previewImg();
   document.getElementById('editModal').classList.add('open');
 }
@@ -623,35 +718,364 @@ function previewImg() {
 
 async function saveModal() {
   const dealId = document.getElementById('modalDealId').value;
-  const logIndex = parseInt(document.getElementById('modalLogIndex').value);
+  const rawLogIndex = parseInt(document.getElementById('modalLogIndex').value);
+  const logIndex = isNaN(rawLogIndex) ? null : rawLogIndex;
   const mode = document.getElementById('modalMode').value;
   const copy = document.getElementById('modalCopy').value;
   const imageUrl = document.getElementById('modalImageUrl').value;
+  const rawText = document.getElementById('modalRawDisplay').textContent || '';
+  const platform = document.getElementById('modalPlatform').value || '';
+  const url = document.getElementById('modalUrl').value || '';
 
-  if (mode === 'edit' && dealId) {
-    await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {
-      method: 'PATCH',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({copy, image_url: imageUrl})
-    });
-    showToast('Deal updated ✅');
-  } else {
-    await fetch('/admin/approve', {
-      method: 'POST',
-      headers: {'Content-Type':'application/json'},
-      body: JSON.stringify({log_index: logIndex, copy, image_url: imageUrl})
-    });
-    showToast('Deal approved & posted ✅');
+  const pw = localStorage.getItem('zap_admin_pw');
+  const headers = {'Content-Type':'application/json'};
+  if (pw) headers['Authorization'] = 'Basic ' + btoa('admin:' + pw);
+
+  try {
+    let res;
+    if (mode === 'edit' && dealId) {
+      res = await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {
+        method: 'PATCH',
+        headers,
+        body: JSON.stringify({
+          copy,
+          image_url: imageUrl,
+          display_title: document.getElementById('modalDisplayTitle').value,
+          deal_price:    document.getElementById('modalDealPrice').value,
+          original_price: document.getElementById('modalMrp').value,
+          discount_pct:  document.getElementById('modalDiscount').value,
+        })
+      });
+    } else {
+      // Send the deal data directly (raw_text/platform/url) so approval doesn't
+      // depend on the server's volatile in-memory log index.
+      res = await fetch('/admin/approve', {
+        method: 'POST',
+        headers,
+        body: JSON.stringify({log_index: logIndex, copy, image_url: imageUrl, raw_text: rawText, platform, url})
+      });
+    }
+
+    if (res.status === 401) {
+      const password = prompt('Enter admin password:');
+      if (password) {
+        localStorage.setItem('zap_admin_pw', password);
+        saveModal(); // Retry with credentials
+      }
+      return;
+    }
+
+    if (res.ok) {
+      showToast(mode === 'edit' ? 'Deal updated ✅' : 'Deal approved & posted ✅');
+      closeModal();
+      await load();
+    } else {
+      showToast('❌ Failed (status ' + res.status + ')');
+    }
+  } catch (e) {
+    showToast('❌ Error: ' + e.message);
   }
-  closeModal();
-  await load();
 }
 
 async function removeDeal(dealId) {
   if (!confirm('Remove this deal from the app?')) return;
-  await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {method:'DELETE'});
-  showToast('Deal removed 🗑');
-  await load();
+  const pw = localStorage.getItem('zap_admin_pw');
+  const creds = pw ? 'Basic ' + btoa('admin:' + pw) : null;
+
+  try {
+    const res = await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {
+      method: 'DELETE',
+      headers: creds ? {'Authorization': creds} : {}
+    });
+    if (res.status === 401) {
+      const password = prompt('Enter admin password:');
+      if (password) {
+        localStorage.setItem('zap_admin_pw', password);
+        removeDeal(dealId); // Retry with credentials
+      }
+      return;
+    }
+    if (res.ok) {
+      showToast('Deal removed 🗑');
+      await load();
+    } else {
+      showToast('❌ Failed to remove (status ' + res.status + ')');
+    }
+  } catch (e) {
+    showToast('❌ Error: ' + e.message);
+  }
+}
+
+async function togglePin(btn, dealId, isPinned) {
+  if (!dealId) { showToast('No deal id'); return; }
+  const pw = localStorage.getItem('zap_admin_pw');
+  const creds = pw ? 'Basic ' + btoa('admin:' + pw) : null;
+  const next = !isPinned;
+  btn.disabled = true;
+
+  try {
+    const res = await fetch(`/admin/deals/${encodeURIComponent(dealId)}`, {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', ...(creds ? {'Authorization': creds} : {}) },
+      body: JSON.stringify({ pinned: next })
+    });
+    if (res.status === 401) {
+      const password = prompt('Enter admin password:');
+      if (password) {
+        localStorage.setItem('zap_admin_pw', password);
+        togglePin(btn, dealId, isPinned); // Retry with credentials
+      }
+      btn.disabled = false;
+      return;
+    }
+    if (res.ok) {
+      showToast(next ? 'Pinned to top 📌' : 'Unpinned');
+      await load();
+    } else {
+      showToast('❌ Failed (status ' + res.status + ')');
+      btn.disabled = false;
+    }
+  } catch (e) {
+    showToast('❌ Error: ' + e.message);
+    btn.disabled = false;
+  }
+}
+
+// ── App Tabs config ─────────────────────────────────────────────────────────
+const TAB_TYPE_META = {
+  all:      { label: 'All deals', bg: '#E0F2FE', color: '#0369A1' },
+  hot:      { label: 'Pinned only', bg: '#FEF3C7', color: '#B45309' },
+  category: { label: 'Category', bg: '#F0EDE8', color: '#78716C' },
+};
+
+function renderAppTabs() {
+  const tabs = [...allTabs].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  if (!tabs.length) {
+    document.getElementById('content').innerHTML = '<div class="empty">No tabs configured. Run the app_tabs migration.</div>';
+    return;
+  }
+  const rows = tabs.map((t, i) => {
+    const meta = TAB_TYPE_META[t.type] || TAB_TYPE_META.category;
+    const typeLabel = t.type === 'category' && t.value ? `${meta.label}: ${esc(t.value)}` : meta.label;
+    const on = !!t.enabled;
+    const isBase = t.type === 'all';  // "Latest" home feed — can't be turned off
+    return `
+      <tr>
+        <td style="white-space:nowrap">
+          <button class="apptab-move" onclick="moveTab('${esc(t.key)}',-1)" ${i === 0 ? 'disabled' : ''} title="Move up">▲</button>
+          <button class="apptab-move" onclick="moveTab('${esc(t.key)}',1)" ${i === tabs.length - 1 ? 'disabled' : ''} title="Move down">▼</button>
+        </td>
+        <td><span style="font-weight:700;font-size:14px">${esc(t.label)}</span>
+            <button class="apptab-rename" onclick="renameTab('${esc(t.key)}')" title="Rename">✎</button></td>
+        <td><span class="apptab-type" style="background:${meta.bg};color:${meta.color}">${typeLabel}</span></td>
+        <td style="white-space:nowrap">
+          <button class="apptab-toggle${on ? ' on' : ''}" onclick="toggleTab('${esc(t.key)}',${on})" ${isBase ? 'disabled title="The Latest feed is always on"' : ''}>
+            ${on ? 'On' : 'Off'}
+          </button>
+        </td>
+      </tr>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML = `
+    <div style="padding:8px 4px 14px;color:#78716C;font-size:13px">
+      Toggle, reorder, and rename the filter tabs shown in the app. Changes apply on the next app launch — <b>no app release needed.</b>
+      Mark deals as <b>🔥 Hot</b> using the 📌 Pin button on the Posted tab.
+    </div>
+    <table>
+      <thead><tr><th>Order</th><th>Label</th><th>Shows</th><th>Status</th></tr></thead>
+      <tbody>${rows}</tbody>
+    </table>`;
+}
+
+async function adminTabFetch(url, opts) {
+  const pw = localStorage.getItem('zap_admin_pw');
+  const creds = pw ? 'Basic ' + btoa('admin:' + pw) : null;
+  const res = await fetch(url, {
+    ...opts,
+    headers: { 'Content-Type': 'application/json', ...(creds ? {'Authorization': creds} : {}), ...(opts?.headers || {}) },
+  });
+  if (res.status === 401) {
+    const password = prompt('Enter admin password:');
+    if (password) { localStorage.setItem('zap_admin_pw', password); return adminTabFetch(url, opts); }
+  }
+  return res;
+}
+
+async function toggleTab(key, isOn) {
+  try {
+    const res = await adminTabFetch(`/admin/tabs/${encodeURIComponent(key)}`, {
+      method: 'PATCH', body: JSON.stringify({ enabled: !isOn }),
+    });
+    if (res.ok) { showToast(!isOn ? 'Tab enabled' : 'Tab disabled'); await load(false); }
+    else showToast('❌ Failed (status ' + res.status + ')');
+  } catch (e) { showToast('❌ Error: ' + e.message); }
+}
+
+async function renameTab(key) {
+  const tab = allTabs.find(t => t.key === key);
+  const label = prompt('Tab label (emojis allowed, e.g. "🔥 Hot"):', tab ? tab.label : '');
+  if (label == null) return;
+  if (!label.trim()) { showToast('Label cannot be empty'); return; }
+  try {
+    const res = await adminTabFetch(`/admin/tabs/${encodeURIComponent(key)}`, {
+      method: 'PATCH', body: JSON.stringify({ label: label.trim() }),
+    });
+    if (res.ok) { showToast('Renamed'); await load(false); }
+    else showToast('❌ Failed (status ' + res.status + ')');
+  } catch (e) { showToast('❌ Error: ' + e.message); }
+}
+
+async function moveTab(key, dir) {
+  const tabs = [...allTabs].sort((a, b) => (a.position ?? 0) - (b.position ?? 0));
+  const i = tabs.findIndex(t => t.key === key);
+  const j = i + dir;
+  if (i < 0 || j < 0 || j >= tabs.length) return;
+  [tabs[i], tabs[j]] = [tabs[j], tabs[i]];
+  const order = tabs.map(t => t.key);
+  try {
+    const res = await adminTabFetch('/admin/tabs/reorder', {
+      method: 'POST', body: JSON.stringify({ order }),
+    });
+    if (res.ok) { showToast('Reordered'); await load(false); }
+    else showToast('❌ Failed (status ' + res.status + ')');
+  } catch (e) { showToast('❌ Error: ' + e.message); }
+}
+
+// ── Hot Deals ranking ────────────────────────────────────────────────────────
+function fmtPrice(v) {
+  if (!v) return '';
+  const n = parseInt(String(v).replace(/[^\d]/g, ''), 10);
+  return isNaN(n) ? '' : '₹' + n.toLocaleString('en-IN');
+}
+
+function renderHotDeals() {
+  const deals = [...allHotDeals].sort((a, b) => {
+    const ap = a.pin_order != null ? a.pin_order : null;
+    const bp = b.pin_order != null ? b.pin_order : null;
+    if (ap == null && bp == null) return new Date(b.created_at) - new Date(a.created_at);
+    if (ap == null) return -1;
+    if (bp == null) return 1;
+    return ap - bp;
+  });
+
+  if (!deals.length) {
+    document.getElementById('content').innerHTML =
+      '<div class="empty">No Hot deals yet.<br/><span style="font-size:13px;color:#A8A29E">Use the 📌 Pin button on the ✅ Posted tab to add deals here.</span></div>';
+    return;
+  }
+
+  const cards = deals.map((d, i) => {
+    const price  = fmtPrice(d.deal_price);
+    const dpNum  = d.deal_price  ? parseInt(String(d.deal_price).replace(/\D/g,''), 10) : 0;
+    const mrpNum = d.original_price ? parseInt(String(d.original_price).replace(/\D/g,''), 10) : 0;
+    const mrp    = mrpNum > dpNum && dpNum > 0 ? fmtPrice(d.original_price) : '';
+    const disc   = d.discount_pct ? `${d.discount_pct}% OFF` : '';
+    const titleRaw = (d.display_title || d.copy || '').split('\n')[0];
+    const title    = esc(titleRaw.slice(0, 120));
+    const plat     = d.platform || '';
+    const platform = esc(plat.charAt(0).toUpperCase() + plat.slice(1));
+    const when     = fmtTime(d.created_at);
+    const isFirst  = i === 0, isLast = i === deals.length - 1;
+
+    const imgHtml = d.image_url
+      ? `<img src="${esc(d.image_url)}" style="width:120px;height:120px;object-fit:cover;border-radius:10px;background:#F0EDE8;display:block" onerror="this.style.display='none'">`
+      : `<div class="hot-img-placeholder">🛍</div>`;
+
+    const priceParts = [
+      price ? `<span class="hot-price">${price}</span>` : '',
+      mrp   ? `<span class="hot-mrp">${mrp}</span>`    : '',
+      disc  ? `<span class="hot-disc">${disc}</span>`   : '',
+    ].filter(Boolean).join('');
+
+    return `<div class="hot-card" draggable="true"
+      ondragstart="hotDragStart(event,'${esc(String(d.id))}')"
+      ondragover="hotDragOver(event)"
+      ondrop="hotDrop(event,'${esc(String(d.id))}')"
+      ondragend="hotDragEnd(event)">
+      <div class="hot-rank">#${i + 1}</div>
+      <div class="hot-drag-handle" title="Drag to reorder">⠿⠿</div>
+      <div class="hot-img-wrap">${imgHtml}</div>
+      <div class="hot-info">
+        <div class="hot-plat">${platform}</div>
+        <div class="hot-title">${title}</div>
+        ${priceParts ? `<div class="hot-price-row">${priceParts}</div>` : ''}
+        <div class="hot-when">Pinned · ${when}</div>
+      </div>
+      <div style="flex-shrink:0;align-self:center;margin-left:auto;padding-left:12px;display:flex;flex-direction:column;gap:6px">
+        ${d.affiliate_url ? `<a href="${esc(d.affiliate_url)}" target="_blank" rel="noopener" class="cta-link" style="text-align:center">Check price →</a>` : ''}
+        <button class="btn-remove" onclick="unpinFromHot('${esc(String(d.id))}')">📌 Unpin</button>
+      </div>
+    </div>`;
+  }).join('');
+
+  document.getElementById('content').innerHTML =
+    `<div style="padding:8px 4px 14px;color:#78716C;font-size:13px">
+      <b>${deals.length} deal${deals.length > 1 ? 's' : ''}</b> in the 🔥 Hot tab — shown to users in this order. Use ▲▼ to rerank.
+    </div>
+    <div class="hot-list">${cards}</div>`;
+}
+
+function hotDragStart(e, id) {
+  _hotDragId = id;
+  e.dataTransfer.effectAllowed = 'move';
+  e.dataTransfer.setData('text/plain', id);
+  requestAnimationFrame(() => e.currentTarget.classList.add('hot-dragging'));
+}
+
+function hotDragOver(e) {
+  e.preventDefault();
+  e.dataTransfer.dropEffect = 'move';
+  const card = e.currentTarget;
+  document.querySelectorAll('.hot-card.hot-drag-over').forEach(el => {
+    if (el !== card) el.classList.remove('hot-drag-over');
+  });
+  if (!card.classList.contains('hot-dragging')) card.classList.add('hot-drag-over');
+}
+
+async function hotDrop(e, targetId) {
+  e.preventDefault();
+  e.stopPropagation();
+  document.querySelectorAll('.hot-card.hot-drag-over,.hot-card.hot-dragging').forEach(el => {
+    el.classList.remove('hot-drag-over', 'hot-dragging');
+  });
+  if (!_hotDragId || _hotDragId === targetId) { _hotDragId = null; return; }
+
+  // Sort the current list, remove the dragged item, insert before the target
+  const sorted = [...allHotDeals].sort((a, b) => {
+    const ap = a.pin_order != null ? a.pin_order : 9999;
+    const bp = b.pin_order != null ? b.pin_order : 9999;
+    return ap !== bp ? ap - bp : new Date(b.created_at) - new Date(a.created_at);
+  });
+  const moved    = sorted.find(d => String(d.id) === String(_hotDragId));
+  const remaining = sorted.filter(d => String(d.id) !== String(_hotDragId));
+  const toIdx    = remaining.findIndex(d => String(d.id) === String(targetId));
+  if (toIdx < 0) remaining.push(moved); else remaining.splice(toIdx, 0, moved);
+
+  _hotDragId = null;
+  try {
+    const res = await adminTabFetch('/admin/hot-deals/reorder', {
+      method: 'POST', body: JSON.stringify({ order: remaining.map(d => d.id) }),
+    });
+    if (res && res.ok) { showToast('Reordered ✓'); await load(false); }
+    else showToast('❌ Failed to reorder');
+  } catch (err) { showToast('❌ ' + err.message); }
+}
+
+function hotDragEnd(e) {
+  document.querySelectorAll('.hot-card').forEach(el =>
+    el.classList.remove('hot-drag-over', 'hot-dragging'));
+  _hotDragId = null;
+}
+
+async function unpinFromHot(dealId) {
+  if (!confirm('Remove this deal from the 🔥 Hot tab?')) return;
+  try {
+    const res = await adminTabFetch(`/admin/deals/${encodeURIComponent(dealId)}`, {
+      method: 'PATCH', body: JSON.stringify({ pinned: false }),
+    });
+    if (res && res.ok) { showToast('Removed from Hot tab'); await load(false); }
+    else showToast('❌ Failed');
+  } catch (e) { showToast('❌ ' + e.message); }
 }
 
 function showRaw(full) {
@@ -671,23 +1095,31 @@ async function pushDeal(btn, dealId, copy) {
   const preview = (copy || '').substring(0, 100);
   if (!confirm(`Send this deal to all users?\n\n${preview}`)) return;
 
-  const adminKey = localStorage.getItem('zap_admin_key') || '';
+  const pw = localStorage.getItem('zap_admin_pw');
   const orig = btn.textContent;
   btn.disabled = true;
   btn.textContent = 'Sending…';
 
   try {
+    const headers = { 'Content-Type': 'application/json' };
+    if (pw) headers['Authorization'] = 'Basic ' + btoa('admin:' + pw);
+
     const res = await fetch('/notify', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'X-Admin-Key': adminKey },
+      headers,
       body: JSON.stringify({ deal_id: dealId }),
     });
-    if (res.status === 403) {
-      const key = prompt('Enter admin API key:');
+
+    if (res.status === 401) {
+      const password = prompt('Enter admin password:');
       btn.disabled = false; btn.textContent = orig;
-      if (key) { localStorage.setItem('zap_admin_key', key); pushDeal(btn, dealId, copy); }
+      if (password) {
+        localStorage.setItem('zap_admin_pw', password);
+        pushDeal(btn, dealId, copy);
+      }
       return;
     }
+
     const d = await res.json();
     if (res.ok && d.status !== 'no_devices') {
       const sent = (d.expo || 0) + (d.fcm || 0);
@@ -713,16 +1145,11 @@ function esc(s) {
 
 load();
 
-// Background refresh every 60s — silently updates data + stats without
-// re-rendering the visible content (no spinner, no scroll jump).
-// Only re-renders if user is on a tab that shows live counts (all/posted/filtered).
-setInterval(async () => {
-  await load(false);  // fetch fresh data, no spinner
-  // Re-render current view only if not link-ops or domains (those are static enough)
-  if (activeTab !== 'linkops' && activeTab !== 'domains') {
-    render(document.getElementById('search').value.toLowerCase().trim());
-  }
-}, 60000);
+// NO automatic polling. The previous version fired 6 heavy limit=300 queries
+// every 60s, which — left open for hours — starved the shared-CPU API the app
+// depends on (CPU-throttled it). Refresh is now MANUAL only: use the ↺ Refresh
+// button in the toolbar. This keeps the dashboard from ever loading the API in
+// the background.
 </script>
 </body>
 </html>

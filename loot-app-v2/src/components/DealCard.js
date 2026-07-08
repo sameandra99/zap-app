@@ -1,191 +1,272 @@
 import React from "react";
 import {
   View, Text, Image, TouchableOpacity,
-  StyleSheet, Share, Linking, Platform,
+  StyleSheet, Linking, Platform, Alert,
 } from "react-native";
-import { trackDealClick, trackDealShared } from "../hooks/useAnalytics";
+import { trackDealClick } from "../hooks/useAnalytics";
 
-const PLATFORM_COLORS = {
-  amazon:   { bg: "#FFF3E0", text: "#E65100" },
-  flipkart: { bg: "#E8EAF6", text: "#283593" },
-  myntra:   { bg: "#FCE4EC", text: "#880E4F" },
-  ajio:     { bg: "#F3E5F5", text: "#4A148C" },
-  nykaa:    { bg: "#FCE4EC", text: "#C2185B" },
-  meesho:   { bg: "#EDE7F6", text: "#4527A0" },
-  zepto:    { bg: "#E8F5E9", text: "#1B5E20" },
-  blinkit:  { bg: "#FFFDE7", text: "#F57F17" },
-  other:    { bg: "#F5F3EF", text: "#78716C" },
+// Merchant identity. We're a discovery layer pointing users to the merchant, so
+// we show the real marketplace logo (bundled locally) with a brand-colour
+// initial chip as the fallback if the asset somehow fails to load.
+const PLATFORM_META = {
+  amazon:   { name: "Amazon",   color: "#FF9900", initial: "A" },
+  flipkart: { name: "Flipkart", color: "#2874F0", initial: "F" },
+  myntra:   { name: "Myntra",   color: "#FF3F6C", initial: "M" },
+  ajio:     { name: "AJIO",     color: "#2E2E2E", initial: "A" },
+  nykaa:    { name: "Nykaa",    color: "#E5006E", initial: "N" },
+  meesho:   { name: "Meesho",   color: "#9C27B0", initial: "M" },
+  zepto:    { name: "Zepto",    color: "#7B2FF7", initial: "Z" },
+  blinkit:  { name: "Blinkit",  color: "#F8CB46", initial: "B" },
+  other:    { name: "Deal",     color: "#78716C", initial: "%" },
 };
 
-function PlatformBadge({ platform }) {
+// Bundled local PNGs — Metro resolves these at build time so no network needed.
+const PLATFORM_LOGOS = {
+  amazon:   require("../assets/logos/amazon.png"),
+  flipkart: require("../assets/logos/flipkart.png"),
+  myntra:   require("../assets/logos/myntra.png"),
+  ajio:     require("../assets/logos/ajio.png"),
+  nykaa:    require("../assets/logos/nykaa.png"),
+  meesho:   require("../assets/logos/meesho.png"),
+  zepto:    require("../assets/logos/zepto.png"),
+  blinkit:  require("../assets/logos/blinkit.png"),
+};
+
+function MerchantMark({ platform }) {
   const key = (platform || "other").toLowerCase();
-  const colors = PLATFORM_COLORS[key] || PLATFORM_COLORS.other;
-  const label = key === "other" ? "Deal" : key.charAt(0).toUpperCase() + key.slice(1);
+  const m = PLATFORM_META[key] || PLATFORM_META.other;
+  const logo = PLATFORM_LOGOS[key] || null;
+  const [logoFailed, setLogoFailed] = React.useState(false);
   return (
-    <View style={[badgeStyle.wrap, { backgroundColor: colors.bg }]}>
-      <Text style={[badgeStyle.text, { color: colors.text }]}>{label}</Text>
+    <View style={styles.merchantRow}>
+      {logo && !logoFailed ? (
+        <Image
+          source={logo}
+          style={styles.merchantLogoImg}
+          resizeMode="contain"
+          onError={() => setLogoFailed(true)}
+        />
+      ) : (
+        <View style={[styles.merchantLogo, { backgroundColor: m.color }]}>
+          <Text style={styles.merchantInitial}>{m.initial.toUpperCase()}</Text>
+        </View>
+      )}
+      <Text style={styles.merchantName}>{m.name}</Text>
     </View>
   );
 }
 
-const badgeStyle = StyleSheet.create({
-  wrap: {
-    alignSelf: "flex-start",
-    paddingHorizontal: 8,
-    paddingVertical: 3,
-    borderRadius: 6,
-    marginBottom: 7,
-  },
-  text: {
-    fontSize: 11,
-    fontWeight: "700",
-    letterSpacing: 0.2,
-  },
-});
+// ── Data helpers ─────────────────────────────────────────────────────────────
+function formatINR(n) {
+  return "₹" + Number(n).toLocaleString("en-IN");
+}
 
-// Renders **bold** markdown as actual bold spans
-function BoldText({ style, children, numberOfLines }) {
-  if (!children || typeof children !== "string") {
-    return <Text style={style} numberOfLines={numberOfLines}>{children}</Text>;
+function _toRupees(v) {
+  if (!v) return null;
+  const digits = String(v).replace(/[^\d]/g, "");
+  return digits ? parseInt(digits, 10) : null;
+}
+
+// Best price to show: prefer the (scraped) deal_price, then a ₹ value in the
+// copy, then original_price. Returns a formatted "₹13,399" string or null.
+function bestPrice(deal) {
+  const dp = _toRupees(deal.deal_price);
+  if (dp) return formatINR(dp);
+  const m = (deal.copy || "").match(/(?:₹|rs\.?)\s*([\d,]+)/i);
+  if (m) return formatINR(parseInt(m[1].replace(/,/g, ""), 10));
+  const op = _toRupees(deal.original_price);
+  return op ? formatINR(op) : null;
+}
+
+// MRP to show alongside the deal price (struck through). Only returned when it's
+// meaningfully higher than the deal price so we never show MRP ≤ deal price.
+function bestMRP(deal) {
+  const dp = _toRupees(deal.deal_price);
+  const op = _toRupees(deal.original_price);
+  if (!op || !dp || op <= dp) return null;
+  return formatINR(op);
+}
+
+// Strip the price/offer/coupon tail off the marketing copy so the title reads
+// as a clean product name. Falls back to the full copy if nothing to trim.
+function cleanTitle(copy) {
+  if (!copy) return "";
+  let t = String(copy).replace(/\*\*/g, "");
+  const cut = t.search(
+    /\s+(?:at|for|@)\s*(?:₹|rs\.?|\d)|\s*[—-]\s*(?:₹|rs\.?|\d+\s*%)|\s*₹\s*[\d,]+|\b\d+\s*%\s*off|\bmin\.?\s*\d|\bup\s*to\b|\(use|\bcoupon\b|,\s*rs\.?/i
+  );
+  if (cut > 8) t = t.slice(0, cut);
+  t = t.replace(/[\s.,:;–—-]+$/, "").trim();
+  return t || String(copy).replace(/\*\*/g, "");
+}
+
+function parseDiscount(v) {
+  if (v == null) return null;
+  const n = parseInt(v, 10);
+  if (isNaN(n) || n < 1 || n > 99) return null;
+  return n;
+}
+
+// Parse a Postgres/ISO timestamp robustly. If the string already carries
+// timezone info (trailing Z or ±hh:mm) we trust it; otherwise it's a naive UTC
+// timestamp and we append Z. The old code blindly sliced to 19 chars and forced
+// "Z", which corrupted any offset-aware timestamp (e.g. +05:30 → read as UTC,
+// a 5.5h error).
+function parseTimestamp(dateStr) {
+  const s = String(dateStr).trim();
+  const hasTz = /[zZ]$|[+-]\d{2}:?\d{2}$/.test(s);
+  return new Date(hasTz ? s : s.replace(" ", "T") + "Z").getTime();
+}
+
+function addedAgo(dateStr) {
+  if (!dateStr) return "";
+  try {
+    const mins = Math.floor((Date.now() - parseTimestamp(dateStr)) / 60000);
+    if (isNaN(mins) || mins < 2) return "just now";
+    if (mins < 60) return `${mins}m ago`;
+    const h = Math.floor(mins / 60);
+    if (h < 24) return `${h}h ago`;
+    return `${Math.floor(h / 24)}d ago`;
+  } catch (e) {
+    return "";
   }
-  const parts = children.split(/\*\*(.*?)\*\*/g);
-  if (parts.length === 1) {
-    return <Text style={style} numberOfLines={numberOfLines}>{children}</Text>;
-  }
+}
+
+// Qualitative engagement signal (replaces raw "clicks"). No "Trending" here —
+// the Trending section header already conveys that for pinned deals.
+function socialLabel(deal) {
+  if ((deal.clicks || 0) >= 25) return { text: "Popular today", color: "#B45309" };
+  return null;
+}
+
+function PriceRow({ price, mrp, pct }) {
+  if (!price && pct == null) return null;
   return (
-    <Text style={style} numberOfLines={numberOfLines}>
-      {parts.map((part, i) =>
-        i % 2 === 1
-          ? <Text key={i} style={{ fontWeight: "800", color: "#1C1917" }}>{part}</Text>
-          : part
+    <View style={styles.priceRow}>
+      {!!price && (
+        <Text style={styles.price} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
+          {price}
+        </Text>
       )}
+      {!!mrp && (
+        <Text style={styles.mrp} numberOfLines={1}>{mrp}</Text>
+      )}
+      {pct != null && (
+        <View style={styles.discBadge}>
+          <Text style={styles.discText}>{pct}% OFF</Text>
+        </View>
+      )}
+    </View>
+  );
+}
+
+function MetaLine({ deal }) {
+  const label = socialLabel(deal);
+  const when = addedAgo(deal.created_at);
+  return (
+    <Text style={styles.meta} numberOfLines={1}>
+      {label && <Text style={[styles.metaLabel, { color: label.color }]}>{label.text}</Text>}
+      {label && when ? <Text style={styles.metaDim}>{"  ·  "}</Text> : null}
+      {when ? <Text style={styles.metaDim}>{`Added ${when}`}</Text> : null}
     </Text>
   );
 }
 
-function timeAgo(dateStr) {
-  if (!dateStr) return "";
-  try {
-    const safe = dateStr.substring(0, 19) + "Z";
-    const diff = Math.floor((Date.now() - new Date(safe).getTime()) / 1000);
-    if (isNaN(diff) || diff < 60)  return "just now";
-    if (diff < 3600)  return Math.floor(diff / 60) + "m ago";
-    if (diff < 86400) return Math.floor(diff / 3600) + "h ago";
-    return Math.floor(diff / 86400) + "d ago";
-  } catch (e) {
-    return "just now";
-  }
+// Extract a coupon code from raw copy — used as fallback when display_title
+// doesn't already contain one (old DB rows pre-dating the pipeline update).
+function parseCoupon(copy) {
+  if (!copy) return null;
+  const m = String(copy).match(
+    /\b(?:use\s+(?:code|coupon)\s*[:\-]?\s*|code\s*[:\-]\s*|coupon\s*[:\-]\s*)([A-Z0-9]{3,15})\b/i
+  );
+  return m ? m[1].toUpperCase() : null;
 }
 
-// Deterministic seed per deal ID so number doesn't change on re-render
-function seedClicks(id) {
-  let hash = 0;
-  for (let i = 0; i < (id || "").length; i++) {
-    hash = (hash * 31 + id.charCodeAt(i)) & 0xffffffff;
-  }
-  return 5 + (Math.abs(hash) % 66); // 5–70
+// Single-line title with coupon appended inline when present.
+// e.g. "Whirlpool 90cm Auto-clean Chimney · Use FLAT200"
+function TitleBlock({ deal }) {
+  const dt = deal.display_title ? String(deal.display_title).trim() : "";
+  const lines = dt.split("\n").map(l => l.trim()).filter(Boolean);
+  const productLine = lines[0] || cleanTitle(deal.copy);
+  // Append coupon inline: prefer pipeline-generated "Use CODE" line, fall back
+  // to parsing raw copy. Old spec-tag lines ("90 cm · Smart") are ignored.
+  const isCouponLine = (l) => l && /^use\s+[A-Z0-9]{3,}/i.test(l);
+  const coupon = isCouponLine(lines[1]) ? lines[1] : (parseCoupon(deal.copy) ? `Use ${parseCoupon(deal.copy)}` : null);
+  const text = coupon ? `${productLine} · ${coupon}` : productLine;
+  return <Text style={styles.title} numberOfLines={2}>{text}</Text>;
 }
 
 export default function DealCard({ deal, onBuy, highlighted = false }) {
   const [opening, setOpening] = React.useState(false);
-
-  const rawClicks = deal.clicks || 0;
-  const displayClicks = rawClicks > 0 ? rawClicks : seedClicks(deal.id);
-  const clicks = displayClicks >= 1000
-    ? `${(displayClicks / 1000).toFixed(1)}K`
-    : `${displayClicks}`;
-  const time = timeAgo(deal.created_at);
+  const price = bestPrice(deal);
+  const mrp = bestMRP(deal);
+  const pct = parseDiscount(deal.discount_pct);
   const targetUrl = deal.affiliate_url || null;
+  const hasImage = !!deal.image_url;
 
   const handleBuy = () => {
     if (opening || !targetUrl) return;
     setOpening(true);
     onBuy(deal.id);
     trackDealClick(deal);
-    Linking.openURL(targetUrl).catch(() => {});
+    Linking.openURL(targetUrl).catch((e) => {
+      if (__DEV__) console.log("[DealCard] openURL failed:", e?.message);
+      Alert.alert(
+        "Couldn't open this deal",
+        "The link couldn't be opened — it may have expired. Try another deal."
+      );
+    });
     setTimeout(() => setOpening(false), 1500);
   };
 
-  const handleShare = async () => {
-    try {
-      await Share.share({
-        message: `${deal.copy}\n\n${deal.affiliate_url || ""}`,
-      });
-      trackDealShared(deal);
-    } catch (_) {}
-  };
+  const Cta = (
+    <TouchableOpacity
+      style={[styles.cta, opening && styles.ctaOpening]}
+      onPress={handleBuy}
+      activeOpacity={0.85}
+      disabled={opening || !targetUrl}
+    >
+      <Text style={styles.ctaText}>{opening ? "Opening…" : "Grab Deal →"}</Text>
+    </TouchableOpacity>
+  );
 
-  const hasImage = !!deal.image_url;
-
-  if (hasImage) {
-    // Image card — text left, image right
-    return (
-      <View style={[styles.card, highlighted && styles.cardHighlighted]}>
-        <View style={styles.bodyWithImage}>
-          <PlatformBadge platform={deal.platform} />
-          <BoldText style={styles.copy} numberOfLines={4}>{deal.copy}</BoldText>
-          <Text style={styles.meta}>{clicks} clicks · {time}</Text>
-          <View style={styles.footer}>
-            <TouchableOpacity
-              style={[styles.offerBtn, opening && styles.offerBtnOpening]}
-              onPress={handleBuy}
-              activeOpacity={0.8}
-              disabled={opening || !targetUrl}
-            >
-              <Text style={styles.offerBtnText}>
-                {opening ? "Opening..." : targetUrl ? "View Offer →" : "View on site →"}
-              </Text>
-            </TouchableOpacity>
-          </View>
-        </View>
-        <View style={styles.imageWrap}>
-          <Image
-            source={{ uri: deal.image_url }}
-            style={styles.image}
-            resizeMode="cover"
-          />
-        </View>
-      </View>
-    );
-  }
-
-  // No-image card — full width text, clean layout
   return (
     <View style={[styles.card, highlighted && styles.cardHighlighted]}>
-      <View style={styles.bodyFull}>
-        <PlatformBadge platform={deal.platform} />
-        <BoldText style={styles.copy} numberOfLines={3}>{deal.copy}</BoldText>
-        <Text style={styles.meta}>{clicks} clicks · {time}</Text>
-        <View style={styles.footer}>
-          <TouchableOpacity style={styles.offerBtn} onPress={handleBuy} activeOpacity={0.8}>
-            <Text style={styles.offerBtnText}>View Offer →</Text>
-          </TouchableOpacity>
-        </View>
+      <View style={styles.body}>
+        <MerchantMark platform={deal.platform} />
+        <TitleBlock deal={deal} />
+        <PriceRow price={price} mrp={mrp} pct={pct} />
+        <MetaLine deal={deal} />
+        {Cta}
       </View>
+      {hasImage && (
+        <View style={styles.imageWrap}>
+          <Image source={{ uri: deal.image_url }} style={styles.image} resizeMode="cover" />
+        </View>
+      )}
     </View>
   );
 }
 
-const IMG_SIZE = 100;
-
-const cardBase = {
-  backgroundColor: "#fff",
-  borderRadius: 16,
-  marginHorizontal: 16,
-  marginBottom: 10,
-  flexDirection: "row",
-  ...Platform.select({
-    ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6 },
-    android: { elevation: 2 },
-  }),
-  overflow: "hidden",
-};
-
 const styles = StyleSheet.create({
-  card: cardBase,
-  // Temporarily highlight a deal opened via push notification tap
-  cardHighlighted: {
+  card: {
+    backgroundColor: "#fff",
+    borderRadius: 16,
+    marginHorizontal: 16,
+    marginBottom: 9,
+    flexDirection: "row",
+    overflow: "hidden",
+    // borderWidth is always 2 — toggling it on/off changes the card's physical
+    // dimensions and triggers a layout recalc that briefly clips content (white
+    // flash on Android). Keep it constant; only the color changes.
     borderWidth: 2,
+    borderColor: "transparent",
+    ...Platform.select({
+      ios: { shadowColor: "#000", shadowOffset: { width: 0, height: 1 }, shadowOpacity: 0.06, shadowRadius: 6 },
+      android: { elevation: 2 },
+    }),
+  },
+  cardHighlighted: {
     borderColor: "#E8571A",
     ...Platform.select({
       ios: { shadowColor: "#E8571A", shadowOpacity: 0.25, shadowRadius: 8 },
@@ -193,65 +274,80 @@ const styles = StyleSheet.create({
     }),
   },
 
-  // Image card — text left, image right
-  bodyWithImage: {
+  body: {
     flex: 1,
-    padding: 14,
-    justifyContent: "space-between",
+    paddingHorizontal: 13,
+    paddingVertical: 11,
+    justifyContent: "center",
   },
+
+  // Merchant mark
+  merchantRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  merchantLogo: {
+    width: 17, height: 17, borderRadius: 5,
+    alignItems: "center", justifyContent: "center", marginRight: 6,
+  },
+  merchantInitial: { color: "#fff", fontSize: 11, fontWeight: "800" },
+  merchantLogoImg: { width: 18, height: 18, borderRadius: 4, marginRight: 6 },
+  merchantName: { fontSize: 12, fontWeight: "700", color: "#57534E", letterSpacing: 0.1 },
+
+  // Price hero + discount — price is the strongest element; badge is secondary
+  priceRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
+  price: { fontSize: 26, fontWeight: "800", color: "#1C1917", letterSpacing: -0.5 },
+  mrp: {
+    fontSize: 13,
+    color: "#A8A29E",
+    textDecorationLine: "line-through",
+    marginLeft: 6,
+    alignSelf: "flex-end",
+    marginBottom: 2,
+  },
+  discBadge: {
+    backgroundColor: "#16A34A",
+    borderRadius: 5,
+    paddingHorizontal: 7,
+    paddingVertical: 2.5,
+    marginLeft: 8,
+  },
+  discText: { color: "#fff", fontSize: 11, fontWeight: "800", letterSpacing: 0.2 },
+
+  title: {
+    fontSize: 15,
+    lineHeight: 20,
+    fontWeight: "600",
+    color: "#292524",
+    marginBottom: 5,
+  },
+
+  // Meta / social proof
+  meta: { fontSize: 12, marginBottom: 10 },
+  metaLabel: { fontSize: 12, fontWeight: "700" },
+  metaDim: { fontSize: 12, color: "#A8A29E", fontWeight: "500" },
+
+  // CTA — warm grey keeps the price as the hero; subtle enough not to compete.
+  cta: {
+    backgroundColor: "#E8E3DC",
+    borderRadius: 9,
+    paddingVertical: 7,
+    alignItems: "center",
+    alignSelf: "flex-start",
+    paddingHorizontal: 16,
+    minWidth: 120,
+  },
+  ctaOpening: { backgroundColor: "#D6CFCA", opacity: 0.9 },
+  ctaText: { color: "#44403C", fontSize: 13, fontWeight: "600", letterSpacing: 0.2 },
+
+  // Image — identical fixed container on every card (placeholder when no image)
   imageWrap: {
-    width: IMG_SIZE,
-    height: IMG_SIZE,
-    flexShrink: 0,
+    width: 116,
+    height: 116,
     alignSelf: "center",
     marginRight: 12,
     borderRadius: 10,
     overflow: "hidden",
     backgroundColor: "#F5F3EF",
-  },
-  image: {
-    width: IMG_SIZE,
-    height: IMG_SIZE,
-  },
-
-  // No-image card — full width
-  bodyFull: {
-    flex: 1,
-    padding: 14,
-  },
-
-  // Shared
-  copy: {
-    fontSize: 15,
-    lineHeight: 22,
-    color: "#1C1917",
-    fontWeight: "500",
-    marginBottom: 6,
-  },
-  meta: {
-    fontSize: 11,
-    color: "#A8A29E",
-    fontWeight: "500",
-    marginBottom: 10,
-  },
-  footer: {
-    flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
+    justifyContent: "center",
   },
-  offerBtn: {
-    backgroundColor: "#F5F3EF",
-    borderRadius: 50,
-    paddingHorizontal: 14,
-    paddingVertical: 7,
-  },
-  offerBtnOpening: {
-    backgroundColor: "#E8E5E0",
-    opacity: 0.7,
-  },
-  offerBtnText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#1C1917",
-  },
+  image: { width: 116, height: 116 },
 });
