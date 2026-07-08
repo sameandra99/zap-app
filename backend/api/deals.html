@@ -13,7 +13,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .page{max-width:600px;margin:0 auto;padding-bottom:32px}
 
 /* Header — logo + hamburger only (matches app) */
-.header{display:flex;align-items:center;justify-content:space-between;padding:18px 20px 12px}
+.header{display:flex;align-items:center;justify-content:space-between;padding:24px 20px 14px}
 .logo{display:flex;align-items:center;gap:9px;text-decoration:none}
 .logo-bolt{width:36px;height:36px;border-radius:10px;flex-shrink:0;display:flex;align-items:center;justify-content:center;background:linear-gradient(140deg,#FA7B39 0%,#E8571A 55%,#D64A0E 100%);box-shadow:0 2px 8px rgba(232,87,26,.32),inset 0 1px 0 rgba(255,255,255,.28)}
 .logo-bolt svg{width:18px;height:18px;display:block;filter:drop-shadow(0 1px 1px rgba(0,0,0,.12))}
@@ -27,18 +27,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 .hamburger span:nth-child(2){width:14px}
 
 /* Greeting */
-.greeting{padding:6px 20px 16px;display:flex;align-items:flex-end;justify-content:space-between;gap:8px 12px;flex-wrap:wrap}
+.greeting{padding:12px 20px 22px}
 .greeting-main{font-size:24px;font-weight:800;color:#1C1917;letter-spacing:-0.4px;line-height:1.15}
-.greeting-sub{font-size:14px;color:#78716C;margin-top:4px;font-weight:500}
-.live-chip{display:inline-flex;align-items:center;gap:6px;font-size:12px;font-weight:600;color:#57534E;background:#fff;border:1px solid #ECE7E0;border-radius:50px;padding:5px 11px;box-shadow:0 1px 3px rgba(0,0,0,.05);white-space:nowrap;margin-bottom:2px}
-.live-chip::before{content:'';width:7px;height:7px;border-radius:50%;background:#16A34A;animation:pulse 2s infinite;flex-shrink:0}
-@keyframes pulse{0%,100%{opacity:1}50%{opacity:.35}}
+.greeting-sub{font-size:14px;color:#78716C;margin-top:5px;font-weight:500}
 
 /* Divider */
-.divider{height:1px;background:#ECE7E0;margin:0 20px 16px}
+.divider{height:1px;background:#ECE7E0;margin:0 20px 20px}
 
 /* Tabs — scroll with header (not sticky, matches app) */
-.tabs-wrap{margin-bottom:12px}
+.tabs-wrap{margin-bottom:18px}
 .tabs{display:flex;gap:8px;padding:0 24px 0 16px;overflow-x:auto;scrollbar-width:none}
 .tabs::-webkit-scrollbar{display:none}
 .tab{flex-shrink:0;padding:8px 14px;border-radius:50px;background:#EEEBE6;border:none;font-size:15px;font-weight:600;color:#78716C;cursor:pointer;font-family:inherit;transition:background .15s,color .15s;white-space:nowrap}
@@ -130,14 +127,15 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
 /* Desktop */
 @media(min-width:640px){
   .page{padding-bottom:40px}
-  .header{padding:28px 24px 14px}
+  .header{padding:40px 24px 16px}
   .logo-bolt{width:40px;height:40px;border-radius:11px}
   .logo-bolt svg{width:20px;height:20px}
   .logo-text{font-size:25px}
-  .greeting{padding:8px 24px 18px}
+  .greeting{padding:16px 24px 28px}
   .greeting-main{font-size:30px}
   .greeting-sub{font-size:15px}
-  .divider{margin:0 24px 16px}
+  .divider{margin:0 24px 24px}
+  .tabs-wrap{margin-bottom:22px}
   .tabs{padding:0 24px}
   .feed{padding:0 24px}
   .load-more-wrap{padding:28px 24px 0}
@@ -184,7 +182,7 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
       <span class="logo-bolt" aria-hidden="true">
         <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg"><path d="M13.4 2 5 13.7h5.2L8.8 22l9.9-12.6h-5.6L13.4 2Z" fill="#fff"/></svg>
       </span>
-      <span class="logo-text">Super <span>Deals</span></span>
+      <span class="logo-text">Super<span>Deals</span></span>
     </a>
     <button class="hamburger" id="hamburger" aria-label="Open menu">
       <span></span><span></span><span></span>
@@ -192,11 +190,8 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,"Helvetica N
   </div>
 
   <div class="greeting">
-    <div>
-      <div class="greeting-main" id="greeting"></div>
-      <div class="greeting-sub">Here are today's best deals for you</div>
-    </div>
-    <div class="live-chip hidden" id="live-chip">Live</div>
+    <div class="greeting-main" id="greeting"></div>
+    <div class="greeting-sub">Here are today's best deals for you</div>
   </div>
 
   <div class="divider"></div>
@@ -427,12 +422,6 @@ function renderFeed() {
   const activeTab=visibleTabs.find(t=>t.key===activeTabKey);
   const lmw=document.getElementById('load-more-wrap');
   lmw.className=activeTab?.type==='all'&&hasMore?'load-more-wrap':'load-more-wrap hidden';
-
-  const chip=document.getElementById('live-chip');
-  if(allDeals.length){
-    chip.textContent=`Live · ${allDeals.length}${hasMore?'+':''} deals`;
-    chip.classList.remove('hidden');
-  }
 }
 
 window.switchTab = function(key) {
