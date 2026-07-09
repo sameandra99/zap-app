@@ -78,15 +78,6 @@ function bestPrice(deal) {
   return op ? formatINR(op) : null;
 }
 
-// MRP to show alongside the deal price (struck through). Only returned when it's
-// meaningfully higher than the deal price so we never show MRP ≤ deal price.
-function bestMRP(deal) {
-  const dp = _toRupees(deal.deal_price);
-  const op = _toRupees(deal.original_price);
-  if (!op || !dp || op <= dp) return null;
-  return formatINR(op);
-}
-
 // Strip the price/offer/coupon tail off the marketing copy so the title reads
 // as a clean product name. Falls back to the full copy if nothing to trim.
 function cleanTitle(copy) {
@@ -139,7 +130,7 @@ function socialLabel(deal) {
   return null;
 }
 
-function PriceRow({ price, mrp, pct }) {
+function PriceRow({ price, pct }) {
   if (!price && pct == null) return null;
   return (
     <View style={styles.priceRow}>
@@ -147,9 +138,6 @@ function PriceRow({ price, mrp, pct }) {
         <Text style={styles.price} numberOfLines={1} adjustsFontSizeToFit minimumFontScale={0.8}>
           {price}
         </Text>
-      )}
-      {!!mrp && (
-        <Text style={styles.mrp} numberOfLines={1}>{mrp}</Text>
       )}
       {pct != null && (
         <View style={styles.discBadge}>
@@ -199,7 +187,6 @@ function TitleBlock({ deal }) {
 export default function DealCard({ deal, onBuy, highlighted = false }) {
   const [opening, setOpening] = React.useState(false);
   const price = bestPrice(deal);
-  const mrp = bestMRP(deal);
   const pct = parseDiscount(deal.discount_pct);
   const targetUrl = deal.affiliate_url || null;
   const hasImage = !!deal.image_url;
@@ -235,7 +222,7 @@ export default function DealCard({ deal, onBuy, highlighted = false }) {
       <View style={styles.body}>
         <MerchantMark platform={deal.platform} />
         <TitleBlock deal={deal} />
-        <PriceRow price={price} mrp={mrp} pct={pct} />
+        <PriceRow price={price} pct={pct} />
         <MetaLine deal={deal} />
         {Cta}
       </View>
@@ -294,14 +281,6 @@ const styles = StyleSheet.create({
   // Price hero + discount — price is the strongest element; badge is secondary
   priceRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
   price: { fontSize: 26, fontWeight: "800", color: "#1C1917", letterSpacing: -0.5 },
-  mrp: {
-    fontSize: 13,
-    color: "#A8A29E",
-    textDecorationLine: "line-through",
-    marginLeft: 6,
-    alignSelf: "flex-end",
-    marginBottom: 2,
-  },
   discBadge: {
     backgroundColor: "#16A34A",
     borderRadius: 5,
