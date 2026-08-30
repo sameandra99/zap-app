@@ -21,6 +21,15 @@ from datetime import datetime, timezone, timedelta
 from dotenv import load_dotenv
 from pathlib import Path
 
+# Shared category/desirability rules, also used by the API. taxonomy.py sits at
+# the backend root; make sure it's importable whether this module is loaded via
+# the scraper (which adds that root) or directly (tests, scripts).
+import sys as _sys
+_BACKEND_ROOT = str(Path(__file__).resolve().parent.parent)
+if _BACKEND_ROOT not in _sys.path:
+    _sys.path.insert(0, _BACKEND_ROOT)
+import taxonomy
+
 load_dotenv(Path(__file__).parent.parent / ".env")
 
 # ── Error logging — make bugs scream, let transient errors stay quiet ──────────
@@ -409,6 +418,12 @@ _TG_PLATFORM_EMOJI = {
     "zepto": "⚡", "blinkit": "🟡",
 }
 
+# "No image = no post": when a deal has no product image, keep it in the DB (it can
+# be image-backfilled and surface later) but don't broadcast it to Telegram or push.
+# Mirrors the same flag on the API, which also hides imageless deals from the app feed.
+HIDE_IMAGELESS_DEALS = os.environ.get("HIDE_IMAGELESS_DEALS", "1").strip().lower() not in ("0", "false", "no", "")
+
+
 def _tg_html(text: str) -> str:
     return text.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
 
@@ -496,6 +511,32 @@ async def send_push_notification(title: str, body: str, deal_id: str = None):
             await client.post(f"{api_url}/notify", json=payload)
     except Exception as e:
         print(f"  [PUSH] {type(e).__name__}: {str(e)[:60]}")
+
+
+async def consider_auto_push(deal_id: str, deal: dict = None):
+    """Ask the API to auto-push this deal IF it clears the smart gate (quality,
+    daily cap, spacing, quiet hours — all enforced server-side). Sends the
+    premium-brand signal (computed here, where PREMIUM_BRANDS lives) so the API
+    can require desirability proof without duplicating the brand list.
+    Fire-and-forget: never block or fail the pipeline over a push."""
+    api_url = os.environ.get("LOOT_API_URL", "http://localhost:8000")
+    key = os.environ.get("INTERNAL_API_KEY", "")
+    text = " ".join(
+        str((deal or {}).get(k) or "") for k in ("copy", "display_title")
+    ).strip()
+    try:
+        async with httpx.AsyncClient(timeout=10) as client:
+            r = await client.post(
+                f"{api_url}/internal/push-deal",
+                json={"deal_id": deal_id, "premium": taxonomy.is_premium_brand(text)},
+                headers={"X-Internal-Key": key} if key else {},
+            )
+            try:
+                print(f"  [AUTO-PUSH] {r.json().get('status', r.status_code)}")
+            except Exception:
+                print(f"  [AUTO-PUSH] HTTP {r.status_code}")
+    except Exception as e:
+        print(f"  [AUTO-PUSH] {type(e).__name__}: {str(e)[:60]}")
 
 
 _DISCOUNT_RE = re.compile(r'(\d{1,3})\s*%\s*off', re.IGNORECASE)
@@ -1465,6 +1506,51 @@ def _extract_amazon_price(html: str) -> Optional[int]:
     return None
 
 
+def _extract_amazon_rating(html: str) -> Optional[float]:
+    """Average star rating (e.g. 4.3) off an Amazon product page.
+
+    Free to compute — same HTML already fetched for title/price/MRP/discount,
+    no extra request. Patterns target the long-stable acrPopover/review-count
+    markup; guarded to 1.0–5.0 since a stray match elsewhere on the page
+    (e.g. an unrelated "out of 5" string) would otherwise slip through.
+    """
+    patterns = [
+        r'id="acrPopover"[^>]*title="([\d.]+)\s+out of 5 stars"',
+        r'data-hook="rating-out-of-text"[^>]*>\s*([\d.]+)\s+out of 5 stars',
+        r'"ratingValue"\s*:\s*"?([\d.]+)"?',
+        r'([\d.]+)\s+out of 5 stars',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            try:
+                v = float(m.group(1))
+            except (ValueError, TypeError):
+                continue
+            if 1.0 <= v <= 5.0:
+                return round(v, 1)
+    return None
+
+
+def _extract_amazon_rating_count(html: str) -> Optional[int]:
+    """Total number of ratings off an Amazon product page. Same free HTML."""
+    patterns = [
+        r'id="acrCustomerReviewText"[^>]*>\s*([\d,]+)\s*(?:ratings?|global ratings?)',
+        r'data-hook="total-review-count"[^>]*>\s*([\d,]+)',
+        r'"reviewCount"\s*:\s*"?([\d,]+)"?',
+    ]
+    for pattern in patterns:
+        m = re.search(pattern, html, re.IGNORECASE)
+        if m:
+            try:
+                v = int(m.group(1).replace(",", ""))
+            except (ValueError, TypeError):
+                continue
+            if 0 <= v <= 50_000_000:
+                return v
+    return None
+
+
 def _discount_from_copy(copy: str) -> Optional[int]:
     """Headline discount % stated in the copy text — fallback for non-Amazon
     deals (Flipkart/Myntra/Ajio) we don't scrape. Free: regex, no LLM."""
@@ -1687,8 +1773,13 @@ async def _fetch_amazon_image_paapi(
     return None
 
 
-async def fetch_og_image(url: str) -> Optional[bytes]:
+async def fetch_og_image(url: str) -> tuple[Optional[bytes], Optional[float], Optional[int]]:
     """Fetch product image from a non-Amazon URL.
+
+    Returns (image_bytes, rating, rating_count). Rating/count are only ever
+    populated for Flipkart today (see _extract_flipkart_rating) — every other
+    platform here returns None for both, since we don't have a scraper for
+    them yet.
 
     Priority chain:
       1. Flipkart: lightweight product JSON endpoint (no bot detection)
@@ -1698,7 +1789,8 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
       5. First sizeable <img> in the page that looks like a product photo
     """
     if not url:
-        return None
+        return None, None, None
+    rating, rating_count = None, None
     try:
         # If it's a redirect/tracker domain, resolve to real URL first
         if is_redirect_domain(url):
@@ -1708,9 +1800,12 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
         # Flipkart embeds full product data (incl. images) in a script tag as
         # __INITIAL_STATE__ JSON. Much lighter and more reliable than og:image.
         if "flipkart.com" in url:
-            fk_img = await _fetch_flipkart_image(url)
+            fk_img, rating, rating_count = await _fetch_flipkart_image(url)
             if fk_img:
-                return fk_img
+                return fk_img, rating, rating_count
+            # Image scraping failed but the rating (from the same page fetch)
+            # may still be good — fall through to generic scraping for an
+            # image, keeping whatever rating we already found.
 
         headers = {
             "User-Agent": "Mozilla/5.0 (Linux; Android 10) AppleWebKit/537.36 Chrome/120 Mobile Safari/537.36",
@@ -1720,7 +1815,7 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             r = await client.get(url, headers=headers)
             if r.status_code != 200:
-                return None
+                return None, rating, rating_count
 
             # Try multiple image sources in priority order
             img_urls = []
@@ -1767,7 +1862,7 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
                     size = len(img_r.content)
                     if img_r.status_code == 200 and size > 1500 and not is_junk_image(img_r.content):
                         print(f"  🌐 Image fetched ({size} bytes) from: {img_url[:60]}")
-                        return img_r.content
+                        return img_r.content, rating, rating_count
                 except Exception as e_img:
                     print(f"  ℹ️  Failed to fetch {img_url[:50]}: {type(e_img).__name__}")
                     continue
@@ -1775,14 +1870,44 @@ async def fetch_og_image(url: str) -> Optional[bytes]:
             print(f"  ℹ️  No valid product image found (tried {len(img_urls)} candidates)")
     except Exception as e:
         print(f"  ℹ️  og:image fetch failed: {type(e).__name__}")
-    return None
+    return None, rating, rating_count
 
 
-async def _fetch_flipkart_image(url: str) -> Optional[bytes]:
+def _extract_flipkart_rating(html: str) -> tuple[Optional[float], Optional[int]]:
+    """Average rating + rating count from Flipkart's __INITIAL_STATE__ JSON
+    blob — the same HTML already fetched for the product image, so this is
+    free (no extra request). Confirmed live against real product pages:
+    fields appear together as "rating":X,"ratingsCount":Y,"reviewsCount":Z.
+
+    A 0/0 result means the listing genuinely has no reviews yet, which we
+    treat as "no data" (None) rather than a real 0.0 rating.
+    """
+    m = re.search(
+        r'"rating"\s*:\s*([\d.]+)\s*,\s*"ratingsCount"\s*:\s*(\d+)\s*,\s*"reviewsCount"\s*:\s*(\d+)',
+        html,
+    )
+    if not m:
+        return None, None
+    try:
+        rating = float(m.group(1))
+        count = int(m.group(2))
+    except (ValueError, TypeError):
+        return None, None
+    if rating <= 0 and count <= 0:
+        return None, None
+    if not (1.0 <= rating <= 5.0):
+        return None, None
+    return round(rating, 1), count
+
+
+async def _fetch_flipkart_image(url: str) -> tuple[Optional[bytes], Optional[float], Optional[int]]:
     """
     Flipkart embeds full product data as __INITIAL_STATE__ JSON in the page.
     This includes high-res image URLs without needing any API key.
     Much more reliable than og:image which Flipkart CDN sometimes returns stale.
+
+    Returns (image_bytes, rating, rating_count) — rating/count come from the
+    same page fetch, so they're returned even if the image download fails.
     """
     headers = {
         "User-Agent": "Mozilla/5.0 (Linux; Android 13; Pixel 7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Mobile Safari/537.36",
@@ -1793,9 +1918,10 @@ async def _fetch_flipkart_image(url: str) -> Optional[bytes]:
         async with httpx.AsyncClient(timeout=10, follow_redirects=True) as client:
             r = await client.get(url, headers=headers)
             if r.status_code != 200:
-                return None
+                return None, None, None
 
             html = r.text
+            rating, rating_count = _extract_flipkart_rating(html)
 
             # Primary: __INITIAL_STATE__ JSON — contains "imageUrl" arrays
             # Pattern: "imageUrl":"https://rukminim2.flixcart.com/image/..."
@@ -1822,13 +1948,15 @@ async def _fetch_flipkart_image(url: str) -> Optional[bytes]:
                     img_r = await client.get(img_url, headers=headers, timeout=6)
                     if img_r.status_code == 200 and len(img_r.content) > 5000 and not is_junk_image(img_r.content):
                         print(f"  🛍️  Flipkart image ({len(img_r.content)} bytes)")
-                        return img_r.content
+                        return img_r.content, rating, rating_count
                 except Exception:
                     continue
 
+            return None, rating, rating_count
+
     except Exception as e:
         print(f"  ℹ️  Flipkart image fetch failed: {type(e).__name__}")
-    return None
+    return None, None, None
 
 
 # Generic words that don't constitute a product name — used to detect messages
@@ -2519,12 +2647,38 @@ async def process_message(
                                         print(f"  💰 Scraped MRP ₹{scraped_mrp:,} ({computed_pct}% off)")
                                 else:
                                     deal["original_price"] = f"₹{scraped_mrp:,}"
+                            # Rating + count — admin-dashboard-only for now (not shown in app/web).
+                            scraped_rating = _extract_amazon_rating(r.text)
+                            if scraped_rating is not None:
+                                deal["rating"] = scraped_rating
+                            scraped_rating_count = _extract_amazon_rating_count(r.text)
+                            if scraped_rating_count is not None:
+                                deal["rating_count"] = scraped_rating_count
+                            # Recover the product image from THIS already-fetched page
+                            # when the dedicated image fetch got bot-walled. The page
+                            # is what Amazon bot-walls; the CDN image URL inside it does
+                            # NOT — so once we have the HTML, the image is a free grab.
+                            if not image_bytes:
+                                _img_url = _extract_amazon_image_url(r.text)
+                                if _img_url:
+                                    try:
+                                        _ir = await client.get(_img_url, timeout=8)
+                                        if _ir.status_code == 200 and _looks_like_image(_ir.content):
+                                            image_bytes = _ir.content
+                                            print(f"  🖼️  Recovered image from product page ({len(image_bytes)}B)")
+                                    except Exception:
+                                        pass
                 except Exception:
                     pass
             if not image_bytes and not is_amazon:
                 # Non-Amazon: og:image scraping (now junk-filtered). Skipped for
                 # Amazon, whose og:image is a logo/sprite, not the product.
-                image_bytes = await fetch_og_image(affiliate_url)
+                # Rating/count only ever come back non-None for Flipkart today.
+                image_bytes, scraped_rating, scraped_rating_count = await fetch_og_image(affiliate_url)
+                if scraped_rating is not None:
+                    deal["rating"] = scraped_rating
+                if scraped_rating_count is not None:
+                    deal["rating_count"] = scraped_rating_count
 
         # Telegram image is the last resort — used only when website scraping found nothing.
         if not image_bytes and tg_image_bytes:
@@ -2563,7 +2717,18 @@ async def process_message(
             )
 
         await save_to_db(deal, image_bytes)
-        await post_to_telegram_channel(deal, image_bytes)
+        # No image = no post: an imageless deal stays in the DB (so an image backfill
+        # can revive it) but is not broadcast to Telegram or pushed to app users.
+        _text = f"{deal.get('display_title') or ''} {deal.get('copy') or ''}"
+        if taxonomy.is_excluded(_text):
+            # Excluded category (apparel): stays in the DB, but goes nowhere —
+            # same rule the API applies to the feed and to push.
+            print(f"  ⏭️  Excluded category → no Telegram/push for {deal_id}")
+        elif image_bytes or not HIDE_IMAGELESS_DEALS:
+            await post_to_telegram_channel(deal, image_bytes)
+            await consider_auto_push(deal_id, deal)
+        else:
+            print(f"  ⏭️  No image → skipping Telegram + push for {deal_id} (kept in DB)")
 
         await _try_log(sb, {
             "raw_text": raw_text[:500],

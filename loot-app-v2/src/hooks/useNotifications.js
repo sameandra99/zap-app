@@ -36,7 +36,10 @@ export function useNotifications(onDealOpen, { requestPermission = false } = {})
 
         track(messaging().onNotificationOpenedApp((remoteMessage) => {
           const dealId = remoteMessage.data?.deal_id;
-          if (dealId && onDealOpen) onDealOpen(dealId);
+          if (dealId) {
+            reportPushOpen(dealId);
+            if (onDealOpen) onDealOpen(dealId);
+          }
         }));
 
         // ── Permission + token registration — only after onboarding ──────────
@@ -61,7 +64,10 @@ export function useNotifications(onDealOpen, { requestPermission = false } = {})
         const initialNotification = await messaging().getInitialNotification();
         if (initialNotification && !cancelled) {
           const dealId = initialNotification.data?.deal_id;
-          if (dealId && onDealOpen) setTimeout(() => onDealOpen(dealId), 500);
+          if (dealId) {
+            reportPushOpen(dealId);
+            if (onDealOpen) setTimeout(() => onDealOpen(dealId), 500);
+          }
         }
       } catch (e) {
         if (__DEV__) console.log("[Push] Setup error:", e?.message);
@@ -75,6 +81,20 @@ export function useNotifications(onDealOpen, { requestPermission = false } = {})
       unsubscribers.forEach((u) => { try { u(); } catch (_) {} });
     };
   }, [requestPermission]); // eslint-disable-line react-hooks/exhaustive-deps
+}
+
+/**
+ * Tell the backend a notification was tapped. Paired with the server's 'sent'
+ * events this yields real push CTR — a notification tap and a browse tap are
+ * otherwise indistinguishable. Fire-and-forget: analytics must never delay or
+ * break the user's navigation to the deal.
+ */
+function reportPushOpen(dealId) {
+  fetch(`${API_BASE}/push-open`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ deal_id: String(dealId) }),
+  }).catch(() => {});
 }
 
 /**

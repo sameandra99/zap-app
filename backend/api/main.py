@@ -8,17 +8,21 @@ from collections import deque
 from fastapi import Depends, FastAPI, HTTPException, Header, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, RedirectResponse
 from fastapi.staticfiles import StaticFiles
+from starlette.background import BackgroundTask
 from supabase import create_client
 from dotenv import load_dotenv
 from pathlib import Path
 from datetime import datetime, timezone, timedelta
 import base64
 import binascii
+import hashlib
 import httpx
 import os
 import re
+import threading
+import taxonomy   # shared category/desirability rules (also used by the pipeline)
 import secrets as _secrets
 import time
 import json
@@ -82,6 +86,78 @@ ADMIN_PASSWORD = os.environ.get("ADMIN_PASSWORD", "")
 # arbitrary rows into pipeline_logs. The scraper sends the same value
 # (INTERNAL_API_KEY env on the scraper app).
 INTERNAL_API_KEY = os.environ.get("INTERNAL_API_KEY", "")
+
+# ── Branded short links (super-deals.in/d/<code>) for X posts ──────────────────
+# The deal's affiliate URL is long and ugly; in a tweet we drop a short branded
+# link instead. It 302-redirects to the affiliate URL and logs the click, giving
+# us first-party click counts. Base is configurable so the same code works if the
+# redirect ever moves to a different host; defaults to the public web domain.
+SHORT_LINK_BASE = os.environ.get("SHORT_LINK_BASE", "https://super-deals.in").rstrip("/")
+# Optional fallback card image for the ~11% of deals with no product image. If
+# unset, those posts get a text-only (summary) card instead of a large-image one.
+SHORT_LINK_OG_FALLBACK_IMG = os.environ.get("SHORT_LINK_OG_FALLBACK_IMG", "").strip()
+_SHORT_ALPHABET = "abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789"
+# User-agents we do NOT count as real clicks: link-preview crawlers (X/Twitter,
+# WhatsApp, Telegram, Slack, etc.) hit the URL to build the unfurl card, which
+# would otherwise inflate every deal's count the instant it's posted.
+_LINK_BOT_RE = re.compile(
+    r"bot|crawler|spider|preview|facebookexternalhit|whatsapp|telegram|slack|discord|"
+    r"embedly|redditbot|pinterest|skype|vkshare|quora|bingbot|googlebot|applebot|"
+    r"yandex|baidu|duckduckbot|twitter|linkedin|metainspector|headless",
+    re.I,
+)
+
+# ── Amazon Associates monetization (no PA-API needed) ──────────────────────────
+# An affiliate link is just the product URL + your Associates tracking id
+# (?tag=xxxxx-21). PA-API is only for fetching product DATA, not for earning — so
+# we can monetize today by appending the tag at every outbound point. Set the tag
+# as the AMAZON_ASSOC_TAG secret; until then this is a no-op and links stay clean.
+AMAZON_ASSOC_TAG = os.environ.get("AMAZON_ASSOC_TAG", "").strip()
+
+# "No image = no post": the app feed (/deals) hides imageless deals so no broken
+# cards ever render. On by default; set HIDE_IMAGELESS_DEALS=0 to show them again.
+HIDE_IMAGELESS_DEALS = os.environ.get("HIDE_IMAGELESS_DEALS", "1").strip().lower() not in ("0", "false", "no", "")
+
+def _amazon_affiliate(url: str) -> str:
+    """Put OUR Associates tag on an amazon product URL. No-op when the tag is unset
+    or the URL isn't Amazon. Any pre-existing tag= is stripped first, so we never
+    accidentally credit someone else's account."""
+    if not AMAZON_ASSOC_TAG or not url:
+        return url
+    if "amazon." not in url.lower():
+        return url
+    base, _, query = url.partition("?")
+    if query:
+        kept = "&".join(p for p in query.split("&") if p and not p.lower().startswith("tag="))
+        url = base + ("?" + kept if kept else "")
+    return f"{url}{'&' if '?' in url else '?'}tag={AMAZON_ASSOC_TAG}"
+
+
+# ── Smart auto-push (re-engage app users without spamming) ─────────────────────
+# The pipeline pings the API for every new deal; we only actually push the best
+# few per day, spaced out, during waking hours (IST). All tunable via env, so the
+# cadence can change with a `fly secrets set` — no redeploy.
+# Auto-push philosophy: DESIRABILITY is the only filter. A push must be an offer
+# on a recognized brand (the pipeline's PREMIUM_BRANDS list — that list IS the
+# curation lever: add a brand there to make its deals pushable). Discount depth
+# and price deliberately don't matter (deep discounts anti-select for junk);
+# the knobs below exist for tightening later but are OFF (0 = disabled).
+PUSH_MIN_DISCOUNT = int(os.environ.get("PUSH_MIN_DISCOUNT", "0"))     # 0 = any offer qualifies
+PUSH_MIN_PRICE    = int(os.environ.get("PUSH_MIN_PRICE", "0"))        # 0 = no price floor
+
+# Drop excluded categories (apparel) from every surface. Set to 0 to carry them again.
+EXCLUDE_CATEGORIES = os.environ.get("EXCLUDE_CATEGORIES", "1").strip().lower() not in ("0", "false", "no", "")
+
+# Whether deal pushes carry the product picture. With an image Android draws the
+# tall BigPicture card; without one it draws the short text card. Flipping this
+# is the image-vs-no-image CTR experiment — it's an env var (not a deploy) so the
+# arm can be switched instantly, and every push is tagged with which arm it was.
+PUSH_INCLUDE_IMAGE = os.environ.get("PUSH_INCLUDE_IMAGE", "1").strip().lower() not in ("0", "false", "no", "")
+PUSH_VARIANT = "image" if PUSH_INCLUDE_IMAGE else "noimage"
+PUSH_MAX_PER_DAY  = int(os.environ.get("PUSH_MAX_PER_DAY", "5"))      # cap over a rolling 24h
+PUSH_MIN_GAP_MIN  = int(os.environ.get("PUSH_MIN_GAP_MIN", "150"))    # min minutes between pushes (2.5h)
+PUSH_START_IST    = int(os.environ.get("PUSH_START_IST", "8"))        # quiet-hours start, IST (inclusive)
+PUSH_END_IST      = int(os.environ.get("PUSH_END_IST", "22"))         # quiet-hours end, IST (exclusive)
 
 # In-memory stores
 pipeline_logs_store = []
@@ -386,28 +462,47 @@ _DEAL_COLUMNS = (
 @app.get("/deals")
 def get_deals(limit: int = 50, offset: int = 0):
     """Returns latest deals, strictly newest-first. Pinning does NOT reorder this
-    feed — the Hot tab's pin_order ranking is applied client-side."""
+    feed — the Hot tab's pin_order ranking is applied client-side.
+
+    Rule: no image = no post. An imageless card looks broken in the app, so the
+    feed hides deals with no image_url (both NULL and empty string — the .neq
+    excludes '' and, under SQL null semantics, NULLs too; the not_.is_ makes that
+    explicit). Non-destructive: the deal stays in the DB, still reachable via its
+    deep link (/deals/{id}) and on web/Telegram/X, and reappears in the app the
+    moment an image is backfilled. Toggle off with HIDE_IMAGELESS_DEALS=0."""
     db = get_db()
+
+    def _feed_query(columns):
+        q = db.table("deals").select(columns)
+        if HIDE_IMAGELESS_DEALS:
+            q = q.not_.is_("image_url", "null").neq("image_url", "")
+        return q.order("created_at", desc=True).range(offset, offset + limit - 1)
+
     try:
-        result = (
-            db.table("deals")
-            .select(_DEAL_COLUMNS)
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
+        result = _feed_query(_DEAL_COLUMNS).execute()
     except Exception as e:
         # A projected column may not exist yet (pre-migration). Fall back to
         # SELECT * so the app keeps working rather than 500-ing.
         log_exc("get_deals projection", e)
-        result = (
-            db.table("deals")
-            .select("*")
-            .order("created_at", desc=True)
-            .range(offset, offset + limit - 1)
-            .execute()
-        )
-    return {"deals": result.data, "count": len(result.data)}
+        result = _feed_query("*").execute()
+    deals = result.data or []
+    # Excluded categories (apparel) are dropped here rather than in the query, so
+    # the rule lives in ONE place (taxonomy.py) shared with push and Telegram
+    # instead of being duplicated as SQL. The app over-fetches (200) for its
+    # category tabs, so losing ~4% of a page is invisible.
+    if EXCLUDE_CATEGORIES:
+        deals = [
+            d for d in deals
+            if not taxonomy.is_excluded(f"{d.get('display_title') or ''} {d.get('copy') or ''}")
+        ]
+    # Monetize app + web taps: add the Associates tag to Amazon links on the way
+    # out (no-op until AMAZON_ASSOC_TAG is set). Stored URLs stay clean.
+    if AMAZON_ASSOC_TAG:
+        for d in deals:
+            au = d.get("affiliate_url")
+            if au:
+                d["affiliate_url"] = _amazon_affiliate(au)
+    return {"deals": deals, "count": len(deals)}
 
 
 @app.post("/deals/{deal_id}/click")
@@ -480,6 +575,34 @@ def admin_dashboard():
     return admin_path.read_text()
 
 
+@app.get("/admin/m", response_class=HTMLResponse)
+def admin_mobile():
+    """Phone-first admin: a card feed (image, price, ⭐ rating, coupon) with a big
+    Post-to-X button. Installable to the home screen as a PWA. Same Basic-auth gate
+    as the rest of /admin*."""
+    return (Path(__file__).parent / "admin_mobile.html").read_text()
+
+
+@app.get("/admin/m/manifest.webmanifest")
+def admin_mobile_manifest():
+    """PWA manifest for the phone admin (Android install / home-screen app)."""
+    manifest = {
+        "name": "Zap Admin",
+        "short_name": "Zap Admin",
+        "start_url": "/admin/m",
+        "scope": "/admin/",
+        "display": "standalone",
+        "orientation": "portrait",
+        "background_color": "#0f1115",
+        "theme_color": "#E8571A",
+        "icons": [
+            {"src": "/logos/zap-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+            {"src": "/logos/zap-icon.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+        ],
+    }
+    return Response(content=json.dumps(manifest), media_type="application/manifest+json")
+
+
 @app.post("/register-device")
 def register_device(data: dict):
     """Register a push token (FCM or Expo) — stored in memory + Supabase for persistence.
@@ -509,26 +632,46 @@ def register_device(data: dict):
 def _build_deal_notification(deal: dict):
     """Build a scannable, value-first push from an enriched deal.
 
-    Fixed title "Deal Alert" keeps branding consistent; body carries the hook
-    (discount + product + price). Falls back gracefully when fields are missing.
-      e.g.  title: "Deal Alert"
-            body:  "60% off · Sony WH-1000XM5 — now ₹15,990"
+    The PRODUCT is the headline. We only push deals that clear the desirability
+    gate — i.e. we push because the thing itself is wanted — so the product name
+    is what earns the tap. A discount-led title ("50% off on Amazon") is generic:
+    it reads the same for a Sony headphone and a no-name trolley bag.
+
+    Deliberately absent from the title: the platform. Where you buy it isn't the
+    reason to care, and the store is obvious once the link opens. (X captions do
+    still name the platform — different context, no app around the message.)
+
+    Price and discount move to the body, stated plainly: no em-dashes, no hype,
+    no emoji, and no lead tags ("Grab it", "Big loot", "Price drop") — the price
+    and the discount already say everything those words were gesturing at, and
+    on a feed of notifications they read as filler.
+      e.g.  title: "Sony WH-1000XM5 Wireless Headphones"
+            body:  "₹15,990 · 60% off"
     """
-    disp = (deal.get("display_title") or "").split("\n")[0].strip() or (deal.get("copy") or "").strip()
-    plat = (deal.get("platform") or "").strip().capitalize()
-    price = (deal.get("deal_price") or "").strip()
-    disc = deal.get("discount_pct")
+    try:
+        import x_post
+        title = x_post.clean_title(deal)[:65].strip()
+        price = x_post.parse_price(deal.get("deal_price"))
+        inr = x_post.inr
+    except Exception as e:
+        log_exc("build_deal_notification", e)
+        title, price, inr = "", 0, lambda n: str(n)
 
-    title = "Deal Alert"
+    if not title:
+        title = (deal.get("display_title") or "").split("\n")[0].strip() or "New deal"
 
-    if disc and disp and price:
-        body = f"{disc}% off · {disp} — now {price}"
-    elif disp and price:
-        body = f"{disp} — now {price}{(' on ' + plat) if plat else ''}"
-    elif disp:
-        body = f"{disp}{(' on ' + plat) if plat else ''}"
-    else:
-        body = f"New deal{(' on ' + plat) if plat else ''} just dropped"
+    disc = int(deal.get("discount_pct") or 0)
+    coupon = (deal.get("coupon_code") or "").strip()
+
+    bits = []
+    if price:
+        bits.append(f"₹{inr(price)}")
+    if disc:
+        bits.append(f"{disc}% off")
+    if coupon:
+        bits.append(f"code {coupon}")
+
+    body = " · ".join(bits) or "New deal just dropped"
     return title, body
 
 
@@ -565,7 +708,7 @@ async def _send_to_all_tokens(
             # No richContent/image — Expo's BigPicture crops product images badly.
             # image_url travels in data payload for in-app use only.
             return {"to": token, "title": title, "body": body,
-                    "sound": "default", "channelId": "deals", "data": data_payload}
+                    "sound": "default", "data": data_payload}
         try:
             async with httpx.AsyncClient(timeout=10) as client:
                 r = await client.post(
@@ -594,7 +737,12 @@ async def _send_to_all_tokens(
                 android=messaging.AndroidConfig(
                     priority="high", ttl=timedelta(hours=12),
                     notification=messaging.AndroidNotification(
-                        sound="default", channel_id="deals",
+                        # NO channel_id: the app never creates a "deals" channel, and
+                        # on Android 8+ a push to a non-existent channel is SILENTLY
+                        # DROPPED. Omitting it makes FCM use its auto-created fallback
+                        # ("Miscellaneous") channel, which actually displays. Proper
+                        # long-term fix: create a branded "deals" channel in the app.
+                        sound="default",
                         image=image_url or None),
                 ),
                 token=t,
@@ -609,11 +757,16 @@ async def _send_to_all_tokens(
                     results["fcm"] += 1
                 else:
                     err = str(resp.exception).lower() if resp.exception else ""
-                    if any(s in err for s in (
-                        "registration-token-not-registered",
-                        "invalid-registration-token",
-                        "requested entity was not found",
-                    )):
+                    # FCM reports dead tokens as "NotRegistered" (→ "notregistered"
+                    # after lower()); the old hyphenated strings never matched, so
+                    # uninstalled devices were never pruned and piled up forever.
+                    if (isinstance(resp.exception, getattr(messaging, "UnregisteredError", ()))
+                        or any(s in err for s in (
+                            "notregistered", "unregistered",
+                            "registration-token-not-registered",
+                            "invalid-registration-token",
+                            "requested entity was not found",
+                        ))):
                         dead.append(fcm_tokens[i])
                     else:
                         print(f"  ⚠️  FCM {fcm_tokens[i][:20]}…: {err[:80]}")
@@ -645,10 +798,468 @@ async def _auto_push_deal(deal_id: str):
             return
         title, body = _build_deal_notification(res.data)
         image_url = res.data.get("image_url")
-        await _send_to_all_tokens(title, body, image_url, {"deal_id": str(deal_id)})
+        if HIDE_IMAGELESS_DEALS and not (image_url or "").strip():
+            print(f"[AUTO-PUSH] skip deal {deal_id}: no image (no image = no post)")
+            return
+        res = await _send_to_all_tokens(title, body, _push_image_url(deal_id, image_url),
+                                        {"deal_id": str(deal_id)})
+        _log_push_event(str(deal_id), "sent", res["expo"] + res["fcm"])
         print(f"[AUTO-PUSH] Sent for deal {deal_id}")
     except Exception as e:
         print(f"[AUTO-PUSH] {type(e).__name__}: {str(e)[:80]}")
+
+
+def _mint_short_code(db, deal_id: str) -> "str | None":
+    """Return the deal's short_code, minting + persisting a unique one if absent.
+    Only mints when the deal actually has an http(s) affiliate URL to redirect to.
+    Race-safe: the update is guarded on short_code IS NULL, then re-read confirms
+    whichever writer won."""
+    try:
+        row = (db.table("deals").select("short_code,affiliate_url")
+               .eq("id", deal_id).single().execute().data)
+    except Exception as e:
+        log_exc("mint short code: lookup", e)
+        return None
+    if not row:
+        return None
+    if row.get("short_code"):
+        return row["short_code"]
+    if not (row.get("affiliate_url") or "").startswith("http"):
+        return None  # nothing to redirect to → leave the tweet link-less
+    for _ in range(6):
+        code = "".join(_secrets.choice(_SHORT_ALPHABET) for _ in range(6))
+        try:
+            # Guard on IS NULL so a concurrent post can't clobber an existing code;
+            # the partial unique index rejects the astronomically-rare collision,
+            # which the except catches and retries with a fresh code.
+            (db.table("deals").update({"short_code": code})
+             .eq("id", deal_id).is_("short_code", "null").execute())
+            check = (db.table("deals").select("short_code")
+                     .eq("id", deal_id).single().execute().data)
+            if check and check.get("short_code"):
+                return check["short_code"]
+        except Exception as e:
+            log_exc("mint short code: set", e)
+    return None
+
+
+def _log_short_click(deal_id: str, code: str, ip: str, ua: str, referrer: str) -> None:
+    """Best-effort: record one short-link click. Runs as a background task after
+    the redirect is already sent, so it never adds latency to the user's hop."""
+    try:
+        db = get_db_admin()
+        ip_hash = hashlib.sha256((ip or "").encode()).hexdigest()[:16] if ip else None
+        db.table("short_link_clicks").insert({
+            "deal_id": deal_id,
+            "short_code": code,
+            "ip_hash": ip_hash,
+            "user_agent": (ua or "")[:300],
+            "referrer": (referrer or "")[:300],
+        }).execute()
+    except Exception as e:
+        log_exc("log short click", e)
+
+
+def _og_card_html(deal: dict, code: str, dest: str) -> str:
+    """HTML handed to link-preview crawlers (X / WhatsApp / Slack / …) so the post
+    renders a rich product card: big image + title + price. Real users never see
+    this — they get the 302. The card honestly represents the deal the user lands
+    on (standard link-preview behaviour, not cloaking). The meta-refresh + JS
+    redirect are belt-and-suspenders so any human who does hit this still proceeds."""
+    import html as _html
+    title = (deal.get("display_title") or (deal.get("copy") or "").split("\n")[0] or "Deal").strip()
+    price = (deal.get("deal_price") or "").strip()
+    disc  = deal.get("discount_pct")
+    plat  = (deal.get("platform") or "").strip().capitalize()
+    img   = (deal.get("image_url") or "").strip()
+
+    tail = []
+    if price:
+        tail.append(price if price.startswith("₹") else f"₹{price}")
+    if disc:
+        tail.append(f"{int(disc)}% off")
+    card_title = title if not tail else f"{title} — {' · '.join(tail)}"
+    desc = f"{('On ' + plat + ' · ') if plat else ''}Tap to grab this deal on Zap."
+    url = f"{SHORT_LINK_BASE}/d/{code}"
+
+    card_img = img if img.startswith("http") else SHORT_LINK_OG_FALLBACK_IMG
+    e = _html.escape
+    img_meta = ""
+    card_type = "summary"
+    if card_img:
+        card_type = "summary_large_image"
+        img_meta = (f'<meta property="og:image" content="{e(card_img)}"/>'
+                    f'<meta name="twitter:image" content="{e(card_img)}"/>')
+
+    return (
+        '<!doctype html><html><head><meta charset="utf-8"/>'
+        '<meta property="og:type" content="product"/>'
+        '<meta property="og:site_name" content="Zap"/>'
+        f'<meta property="og:url" content="{e(url)}"/>'
+        f'<meta property="og:title" content="{e(card_title)}"/>'
+        f'<meta property="og:description" content="{e(desc)}"/>'
+        f'<meta name="twitter:card" content="{card_type}"/>'
+        f'<meta name="twitter:title" content="{e(card_title)}"/>'
+        f'<meta name="twitter:description" content="{e(desc)}"/>'
+        f'{img_meta}'
+        f'<meta http-equiv="refresh" content="0;url={e(dest)}"/>'
+        f'<title>{e(card_title)}</title></head>'
+        f'<body>Redirecting to the deal… <a href="{e(dest)}">Continue →</a>'
+        f'<script>location.replace({json.dumps(dest)})</script></body></html>'
+    )
+
+
+# ── Push image letterboxing ───────────────────────────────────────────────────
+# Product photos are square (1:1), but Android's BigPictureStyle crops the image
+# to roughly 2:1 — so it keeps only the middle ~50% vertically and slices the top
+# and bottom off the product ("too zoomed in"). Fix: serve push notifications a
+# pre-letterboxed 2:1 version — the whole product, centred on white, nothing
+# cropped. Server-side, so it works on the app that's already installed.
+PUSH_IMG_W, PUSH_IMG_H = 1024, 512
+_push_img_cache: dict = {}          # deal_id → JPEG bytes (small; bounded below)
+_PUSH_IMG_CACHE_MAX = 200
+# One lock per process: a push fans out to ~80 devices that ALL fetch this image
+# within a second or two. Without serialising, every one of them was a cache miss
+# doing its own Supabase download + Pillow resize on a 256MB shared-CPU machine —
+# they starved each other, most requests never finished in time, and Android
+# silently dropped the picture and drew the short text card instead. With the
+# lock, the first request builds it and the rest wait milliseconds for the cache.
+_push_img_lock = threading.Lock()
+
+
+def _letterbox_2x1(raw: bytes) -> bytes:
+    """Fit the product inside a 2:1 white canvas without cropping anything."""
+    from PIL import Image
+    import io
+    im = Image.open(io.BytesIO(raw))
+    im = im.convert("RGB")
+    im.thumbnail((PUSH_IMG_W, PUSH_IMG_H), Image.LANCZOS)   # fit inside, keep aspect
+    canvas = Image.new("RGB", (PUSH_IMG_W, PUSH_IMG_H), (255, 255, 255))
+    canvas.paste(im, ((PUSH_IMG_W - im.width) // 2, (PUSH_IMG_H - im.height) // 2))
+    out = io.BytesIO()
+    canvas.save(out, "JPEG", quality=85, optimize=True)
+    return out.getvalue()
+
+
+def _build_push_image(deal_id: str):
+    """Return (bytes, source_url) for a deal's letterboxed push image, building and
+    caching it if needed. Serialised: see _push_img_lock. Returns (None, src) when
+    the resize fails so the caller can fall back to the uncropped original."""
+    hit = _push_img_cache.get(deal_id)
+    if hit:
+        return hit, None
+    with _push_img_lock:
+        hit = _push_img_cache.get(deal_id)      # another thread may have built it
+        if hit:
+            return hit, None
+        db = get_db()
+        try:
+            row = db.table("deals").select("image_url").eq("id", deal_id).single().execute().data
+        except Exception as e:
+            log_exc("push_image lookup", e)
+            return None, None
+        src = (row or {}).get("image_url") or ""
+        if not src.startswith("http"):
+            return None, None
+        try:
+            r = httpx.get(src, timeout=10, follow_redirects=True)
+            r.raise_for_status()
+            data = _letterbox_2x1(r.content)
+        except Exception as e:
+            log_exc("push_image resize", e)
+            return None, src
+        if len(_push_img_cache) >= _PUSH_IMG_CACHE_MAX:
+            _push_img_cache.clear()
+        _push_img_cache[deal_id] = data
+        return data, None
+
+
+def _warm_push_image(deal_id: str) -> None:
+    """Build the letterboxed image BEFORE the push goes out. The whole device fleet
+    fetches it within seconds of delivery; if the first of them has to wait on a
+    cold build, enough of them time out that Android drops the picture. Best-effort
+    — a failure here just means the first real request builds it."""
+    try:
+        _build_push_image(deal_id)
+    except Exception as e:
+        log_exc("warm push image", e)
+
+
+@app.get("/push-image/{deal_id}.jpg")
+def push_image(deal_id: str):
+    """2:1 letterboxed product image for push notifications. Served from an
+    in-memory cache that the sender warms before delivery, so the fan-out of device
+    fetches is cheap. Falls back to the original image if the resize fails, so a
+    push never loses its picture over a resize error."""
+    from fastapi.responses import Response
+    data, src = _build_push_image(deal_id)
+    if data:
+        return Response(content=data, media_type="image/jpeg",
+                        headers={"Cache-Control": "public, max-age=86400"})
+    if src:
+        return RedirectResponse(url=src, status_code=302)   # better a crop than no image
+    raise HTTPException(status_code=404, detail="No image")
+
+
+def _push_image_url(deal_id: str, image_url: str) -> str:
+    """The URL a push should use for its picture: our letterboxed variant when we
+    have a public base to serve it from, else the raw image. Returns None when
+    the no-image experiment arm is active, which makes Android draw the short
+    text card instead of the tall BigPicture one."""
+    if not PUSH_INCLUDE_IMAGE:
+        return None
+    if not image_url:
+        return image_url
+    if not SHORT_LINK_BASE.startswith("http"):
+        return image_url
+    _warm_push_image(deal_id)   # build it now, not when 80 devices ask at once
+    return f"{SHORT_LINK_BASE}/push-image/{deal_id}.jpg"
+
+
+def _log_push_event(deal_id: str, event: str, count: int = 1) -> None:
+    """Record a push 'sent' or 'open'. Best-effort — analytics must never break
+    a delivery or a user's tap."""
+    try:
+        get_db_admin().table("push_events").insert({
+            "deal_id": deal_id, "event": event,
+            "count": count, "variant": PUSH_VARIANT,
+        }).execute()
+    except Exception as e:
+        log_exc(f"log push {event}", e)
+
+
+@app.post("/push-open")
+def push_open(data: dict):
+    """The app calls this when a user taps a notification. Together with the
+    'sent' rows this gives real push CTR — previously unmeasurable, because a
+    notification tap and a browse tap both looked like deals.clicks."""
+    deal_id = (data or {}).get("deal_id")
+    if not deal_id:
+        raise HTTPException(status_code=400, detail="deal_id required")
+    _log_push_event(str(deal_id), "open")
+    return {"status": "ok"}
+
+
+@app.get("/admin/preview-notification")
+def preview_notification(deal_id: str):
+    """Dry run: return exactly what a push for this deal WOULD say, without
+    sending anything. Iterating on notification copy previously meant pushing to
+    every registered device to read one line of text — this makes that free.
+    Gated by the same Basic Auth as the rest of /admin*."""
+    db = get_db()
+    try:
+        deal = db.table("deals").select(
+            "id,copy,display_title,platform,image_url,deal_price,original_price,"
+            "discount_pct,coupon_code,rating,rating_count,pushed_at"
+        ).eq("id", deal_id).single().execute().data
+    except Exception as e:
+        log_exc("preview lookup", e)
+        raise HTTPException(status_code=404, detail="Deal not found")
+    if not deal:
+        raise HTTPException(status_code=404, detail="Deal not found")
+
+    title, body = _build_deal_notification(deal)
+    text = f"{deal.get('display_title') or ''} {deal.get('copy') or ''}"
+    price = taxonomy.parse_price(deal.get("deal_price"))
+    has_image = bool((deal.get("image_url") or "").strip())
+    return {
+        "title": title,
+        "body": body,
+        # The image URL is reported but NOT built here — warming the cache is a
+        # side effect that belongs to an actual send, not to a preview.
+        "image_url": f"{SHORT_LINK_BASE}/push-image/{deal_id}.jpg"
+                     if (PUSH_INCLUDE_IMAGE and has_image) else None,
+        "variant": PUSH_VARIANT,
+        # Why this deal would or wouldn't have been auto-pushed, so the copy and
+        # the gate can be debugged from one place.
+        "would_auto_push": {
+            "desirable": taxonomy.is_desirable(text, price),
+            "excluded_category": taxonomy.is_excluded(text),
+            "has_image": has_image,
+            "already_pushed": bool(deal.get("pushed_at")),
+        },
+    }
+
+
+@app.get("/admin/push-stats")
+def push_stats(days: int = 14):
+    """Push CTR by day and variant — the readout for the image experiment."""
+    since = (datetime.now(timezone.utc) - timedelta(days=days)).isoformat()
+    try:
+        rows = (get_db_admin().table("push_events")
+                .select("event,count,variant,created_at")
+                .gte("created_at", since).execute().data) or []
+    except Exception as e:
+        log_exc("push stats", e)
+        return {"error": "unavailable"}
+    agg: dict = {}
+    for r in rows:
+        day = (r.get("created_at") or "")[:10]
+        key = (day, r.get("variant") or "?")
+        a = agg.setdefault(key, {"sent": 0, "open": 0})
+        a[r["event"]] = a.get(r["event"], 0) + int(r.get("count") or 0)
+    out = []
+    for (day, variant), a in sorted(agg.items(), reverse=True):
+        ctr = round(a["open"] / a["sent"] * 100, 1) if a["sent"] else None
+        out.append({"day": day, "variant": variant, **a, "ctr_pct": ctr})
+    return {"rows": out}
+
+
+@app.get("/d/{code}")
+def short_link_redirect(code: str, request: Request):
+    """Branded short link. Behaviour depends on who's asking:
+      • link-preview crawler (X, WhatsApp, Slack, Telegram, …) → serve an OG /
+        Twitter card (product image + title + price) so the post shows a rich
+        preview. NOT counted as a click.
+      • real user → 302 to the deal's affiliate URL, logging the click.
+
+    302 (not 301) so browsers/crawlers don't cache the hop and every real click is
+    counted. Unknown/stale codes fall back to the site homepage."""
+    db = get_db_admin()
+    row = None
+    try:
+        res = (db.table("deals")
+               .select("id,affiliate_url,display_title,copy,deal_price,discount_pct,image_url,platform")
+               .eq("short_code", code).limit(1).execute())
+        row = (res.data or [None])[0]
+    except Exception as e:
+        log_exc("short link lookup", e)
+
+    if not row or not (row.get("affiliate_url") or "").startswith("http"):
+        return RedirectResponse(url=SHORT_LINK_BASE + "/", status_code=302)
+
+    dest = _amazon_affiliate(row["affiliate_url"])  # add Associates tag (no-op if unset)
+    ua = request.headers.get("user-agent", "")
+    if _LINK_BOT_RE.search(ua):
+        # Preview crawler — hand it our card; do not log a click.
+        return HTMLResponse(content=_og_card_html(row, code, dest))
+
+    task = BackgroundTask(
+        _log_short_click, row.get("id"), code, _client_ip(request), ua,
+        request.headers.get("referer", ""),
+    )
+    return RedirectResponse(url=dest, status_code=302, background=task)
+
+
+@app.get("/app")
+def app_redirect(request: Request):
+    """Branded app-install link (super-deals.in/app) → Play Store. Short + on our
+    own domain (X-safe, unlike a generic shortener), and logged (bots excluded) so
+    we can measure X → install taps — stored in short_link_clicks under the
+    synthetic deal_id '__app__'."""
+    dest = "https://play.google.com/store/apps/details?id=com.zapdeals.app"
+    ua = request.headers.get("user-agent", "")
+    task = None
+    if not _LINK_BOT_RE.search(ua):
+        task = BackgroundTask(
+            _log_short_click, "__app__", "app", _client_ip(request), ua,
+            request.headers.get("referer", ""),
+        )
+    return RedirectResponse(url=dest, status_code=302, background=task)
+
+
+@app.post("/admin/deals/{deal_id}/x-caption")
+def preview_x_caption(deal_id: str):
+    """Draft an X caption for a deal. The admin 'Post to X' button opens
+    X's own composer pre-filled with this text (via an intent URL) — no
+    paid API call, no automation. The admin reviews/edits and posts (or
+    schedules) it themselves, right inside X's real UI.
+
+    The tweet's link is a branded super-deals.in/d/<code> short link (minted
+    here on first post), not the raw affiliate URL — cleaner in the post and
+    trackable server-side."""
+    db = get_db_admin()
+    res = db.table("deals").select("*").eq("id", deal_id).single().execute()
+    if not res.data:
+        raise HTTPException(status_code=404, detail="Deal not found")
+    deal = res.data
+    import x_post
+    code = _mint_short_code(db, deal_id)
+    short_url = f"{SHORT_LINK_BASE}/d/{code}" if code else None
+    return {"caption": x_post.build_caption(deal, link=short_url), "short_url": short_url}
+
+
+@app.post("/internal/push-deal")
+async def internal_push_deal(data: dict, request: Request):
+    """Server-to-server (pipeline → API): auto-push a newly-saved deal to app users,
+    but ONLY if it clears the smart gate — good-enough deal, waking hours (IST),
+    under the daily cap, and spaced from the last push. Idempotent per deal via the
+    pushed_at column. Requires the shared INTERNAL_API_KEY, same as /log."""
+    if INTERNAL_API_KEY:
+        if not _secrets.compare_digest(request.headers.get("x-internal-key", ""), INTERNAL_API_KEY):
+            raise HTTPException(status_code=401, detail="Invalid internal key")
+    deal_id = (data or {}).get("deal_id")
+    if not deal_id:
+        raise HTTPException(status_code=400, detail="deal_id required")
+
+    db = get_db_admin()
+    try:
+        deal = db.table("deals").select(
+            "id,copy,display_title,platform,image_url,deal_price,original_price,"
+            "discount_pct,rating,rating_count,pushed_at,coupon_code"
+        ).eq("id", deal_id).single().execute().data
+    except Exception as e:
+        log_exc("push-deal lookup", e)
+        return {"status": "error"}
+    if not deal:
+        return {"status": "not_found"}
+    if deal.get("pushed_at"):
+        return {"status": "already_pushed"}
+
+    # 1) THE gate: desirability — a brand people recognise, OR a product type
+    # people want at a believable price ("Kamiliant" isn't a known brand, but a
+    # trolley bag at ₹3,199 is a wanted thing). Excluded categories (apparel)
+    # never qualify. Discount depth deliberately does NOT matter.
+    _text = f"{deal.get('display_title') or ''} {deal.get('copy') or ''}"
+    _price = taxonomy.parse_price(deal.get("deal_price"))
+    if taxonomy.is_excluded(_text):
+        return {"status": "skip", "reason": "excluded category"}
+    if not taxonomy.is_desirable(_text, _price):
+        return {"status": "skip", "reason": "not desirable (no known brand or wanted product type)"}
+
+    # Optional extra knobs, disabled by default (0): a discount floor and a
+    # price floor, for tightening later without a deploy.
+    disc = deal.get("discount_pct") or 0
+    if PUSH_MIN_DISCOUNT and disc < PUSH_MIN_DISCOUNT:
+        return {"status": "skip", "reason": f"discount {disc}<{PUSH_MIN_DISCOUNT}"}
+    try:
+        price = int(re.sub(r"[^0-9]", "", str(deal.get("deal_price") or "")) or 0)
+    except Exception:
+        price = 0
+    if PUSH_MIN_PRICE and 0 < price < PUSH_MIN_PRICE:
+        return {"status": "skip", "reason": f"price ₹{price}<₹{PUSH_MIN_PRICE}"}
+    # No image = no post: don't push a deal that would render as a broken card.
+    if HIDE_IMAGELESS_DEALS and not (deal.get("image_url") or "").strip():
+        return {"status": "skip", "reason": "no image"}
+
+    # 2) quiet hours (IST = UTC+5:30) — don't ping people overnight
+    now = datetime.now(timezone.utc)
+    ist_hour = (now + timedelta(hours=5, minutes=30)).hour
+    if not (PUSH_START_IST <= ist_hour < PUSH_END_IST):
+        return {"status": "skip", "reason": f"quiet hours (IST {ist_hour}h)"}
+
+    # 3) daily cap + spacing, from the pushed_at history (survives restarts)
+    window = (now - timedelta(hours=24)).isoformat()
+    recent = (db.table("deals").select("pushed_at")
+              .gte("pushed_at", window).order("pushed_at", desc=True).execute().data) or []
+    if len(recent) >= PUSH_MAX_PER_DAY:
+        return {"status": "skip", "reason": f"daily cap ({PUSH_MAX_PER_DAY})"}
+    if recent:
+        last_dt = datetime.fromisoformat(recent[0]["pushed_at"].replace("Z", "+00:00"))
+        if (now - last_dt).total_seconds() < PUSH_MIN_GAP_MIN * 60:
+            return {"status": "skip", "reason": "too soon since last push"}
+
+    # Passed. Mark pushed_at FIRST (guards against a near-simultaneous duplicate
+    # slipping past the cap), then deliver.
+    db.table("deals").update({"pushed_at": now.isoformat()}).eq("id", deal_id).execute()
+    title, body = _build_deal_notification(deal)
+    results = await _send_to_all_tokens(title, body,
+                                        _push_image_url(deal_id, deal.get("image_url")),
+                                        {"deal_id": str(deal_id)})
+    sent = results["expo"] + results["fcm"]
+    _log_push_event(str(deal_id), "sent", sent)
+    print(f"[AUTO-PUSH] '{body[:50]}' -> {sent} devices")
+    return {"status": "pushed", "sent": sent, "title": title, "body": body}
 
 
 @app.post("/notify")
@@ -708,14 +1319,28 @@ async def send_notification(data: dict):
         for k in [k for k, t in _recent_push.items() if now - t > _PUSH_DEDUP_WINDOW]:
             _recent_push.pop(k, None)
 
+    # No image = no post: a deal push with no image renders as a broken card, so skip
+    # it. Free-form messages (no deal_id) are unaffected — an announcement can be
+    # imageless on purpose.
+    if deal_id and HIDE_IMAGELESS_DEALS and not (image_url or "").strip():
+        return {"status": "skip", "reason": "no image"}
+
     # Resync from DB before the empty check so a cold cache doesn't false-negative.
     _refresh_device_tokens()
     if not device_tokens:
         return {"status": "no_devices"}
 
     data_payload = {"deal_id": str(deal_id)} if deal_id else {}
-    results = await _send_to_all_tokens(title, body, image_url, data_payload)
+    # Deal pushes get the letterboxed picture; free-form ones use the URL as given.
+    send_image = _push_image_url(deal_id, image_url) if deal_id else image_url
+    results = await _send_to_all_tokens(title, body, send_image, data_payload)
     total = results["expo"] + results["fcm"]
+    # Log manual/admin pushes too. Without this only auto-pushes were recorded,
+    # so a hand-triggered test push was invisible in push_events — which made it
+    # impossible to tell whether a device had actually been sent anything.
+    if deal_id:
+        _log_push_event(str(deal_id), "sent", total)
+    print(f"[NOTIFY] '{body[:50]}' -> {total} devices (expo={results['expo']}, fcm={results['fcm']}, image={'yes' if send_image else 'no'})")
     return {"status": "sent", "count": total, "expo": results["expo"], "fcm": results["fcm"]}
 
 
@@ -903,7 +1528,7 @@ async def generate_copy_for_approval(data: dict):
             if not image_url:
                 print(f"[GENERATE] Trying og:image scrape...")
                 try:
-                    image_bytes = await fetch_og_image(url)
+                    image_bytes, _rating, _rating_count = await fetch_og_image(url)
                     if image_bytes and len(image_bytes) > 100:
                         print(f"[GENERATE] Got og:image: {len(image_bytes)} bytes")
                         image_url = f"data:image/jpeg;base64,{__import__('base64').b64encode(image_bytes).decode()}"
@@ -1113,6 +1738,35 @@ def get_admin_deals(limit: int = 100):
 
     for d in deals:
         d["raw_text"] = raw_by_id.get(d.get("id"), "")
+        # Show the real (tagged) affiliate link in the admin so it's verifiable —
+        # mirrors exactly what users get on the app/web/X. No-op until the tag is set.
+        if AMAZON_ASSOC_TAG and d.get("affiliate_url"):
+            d["affiliate_url"] = _amazon_affiliate(d["affiliate_url"])
+
+    # Attach short-link (X traffic) click counts per deal. Early volumes are tiny,
+    # so we pull the click rows for these deals and tally in Python; swap for a
+    # Postgres RPC (count grouped by deal_id) if short_link_clicks ever gets large.
+    if deal_ids:
+        try:
+            from collections import Counter, defaultdict
+            click_rows = (
+                db.table("short_link_clicks")
+                .select("deal_id,ip_hash")
+                .in_("deal_id", deal_ids)
+                .execute()
+            ).data or []
+            totals, uniq = Counter(), defaultdict(set)
+            for r in click_rows:
+                did = r.get("deal_id")
+                if did:
+                    totals[did] += 1
+                    uniq[did].add(r.get("ip_hash"))
+            for d in deals:
+                did = d.get("id")
+                d["x_clicks"] = totals.get(did, 0)
+                d["x_clicks_unique"] = len(uniq.get(did, set()))
+        except Exception as e:
+            print(f"[ADMIN-DEALS] click-count join failed: {e}")
 
     return {"deals": deals, "count": len(deals)}
 
@@ -1347,3 +2001,34 @@ def get_link_operations(limit: int = 100):
         print(f"[LINK-OPS] Error: {e}")
         import traceback; traceback.print_exc()
         return {"operations": [], "count": 0, "error": str(e)}
+
+
+@app.get("/admin/x-clicks")
+def x_click_counts(limit: int = 100):
+    """Short-link (X traffic) click totals per deal, most-clicked first, plus a
+    grand total and a unique-visitor estimate (distinct ip_hash). This is the
+    payoff of branded links: real, first-party counts for what X sends you.
+
+    Low volume for now, so a plain client-side tally is fine; if this table grows
+    large, replace with a Postgres GROUP BY / RPC."""
+    from collections import Counter
+    db = get_db_admin()
+    try:
+        rows = db.table("short_link_clicks").select("deal_id,ip_hash").execute().data or []
+        total = Counter(r["deal_id"] for r in rows if r.get("deal_id"))
+        uniq = {}
+        for r in rows:
+            did = r.get("deal_id")
+            if did:
+                uniq.setdefault(did, set()).add(r.get("ip_hash"))
+        top = total.most_common(limit)
+        return {
+            "clicks": [
+                {"deal_id": k, "clicks": v, "unique": len(uniq.get(k, set()))}
+                for k, v in top
+            ],
+            "total_clicks": sum(total.values()),
+            "deals_with_clicks": len(total),
+        }
+    except Exception as e:
+        return {"clicks": [], "total_clicks": 0, "deals_with_clicks": 0, "error": str(e)}

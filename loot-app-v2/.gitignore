@@ -44,3 +44,8 @@ yarn-error.*
 
 # Firebase config (managed as EAS secret GOOGLE_SERVICES_JSON)
 google-services.json
+
+# Google Play service-account key used by `eas submit`. Grants release access to
+# the Play listing — never commit it. Google auto-disables keys found in public
+# repos, which would silently break submits.
+play-store-key.json

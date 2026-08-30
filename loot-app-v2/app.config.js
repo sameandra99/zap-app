@@ -12,7 +12,7 @@ const API_BASE = IS_STAGING ? STAGING_API : PROD_API;
 
 module.exports = {
   expo: {
-    name: IS_STAGING ? "Zap (Test)" : "Zap",
+    name: IS_STAGING ? "Zap Deals (Test)" : "Zap Deals",
     slug: "zap-deals",
     version: "1.1.0",
     orientation: "portrait",
@@ -34,7 +34,7 @@ module.exports = {
       supportsTablet: true,
     },
     android: {
-      versionCode: 4,
+      versionCode: 5,
       adaptiveIcon: {
         foregroundImage: "./assets/adaptive-icon.png",
         backgroundColor: "#ffffff",
@@ -54,6 +54,23 @@ module.exports = {
       "@react-native-firebase/app",
       "@react-native-firebase/analytics",
       "@react-native-firebase/messaging",
+      // Branded push chrome (#4): a white ⚡ silhouette as the Android notification
+      // small icon + an amber tint, replacing the default grey ring. FCM messages
+      // don't set an icon, so Android falls back to this manifest default. The
+      // asset is white-on-transparent — Android renders only its alpha and applies
+      // `color` as the tint.
+      // Listed BEFORE expo-notifications on purpose. withAndroidManifest mods
+      // execute in reverse registration order, so this one runs LAST — after
+      // expo-notifications has written its meta-data, which is what we need to
+      // amend. (Registered after it, it ran against an empty meta-data list.)
+      // It marks the Firebase notification meta-data as a deliberate override;
+      // without that the Android manifest merger fails the build, because
+      // @react-native-firebase/messaging declares the same keys.
+      "./plugins/withNotificationManifestFix",
+      ["expo-notifications", {
+        icon: "./assets/notification-icon.png",
+        color: "#F59E0B",
+      }],
       // Staging only: allow plain-HTTP so the test build can reach the local
       // backend (http://<LAN-IP>:8000). Android blocks cleartext by default on
       // targetSdk≥28. Production stays HTTPS-only (loot-api.fly.dev) — never
