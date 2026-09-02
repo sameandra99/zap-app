@@ -1,6 +1,15 @@
 import { useEffect } from "react";
+import { AppState } from "react-native";
 import messaging from "@react-native-firebase/messaging";
 import { API_BASE } from "../config";
+
+// Re-registering the token on every foreground is what makes retention
+// measurable server-side (the backend stamps push_tokens.last_seen on each
+// call). Throttled so a user flipping between apps writes one row per window,
+// not one per switch.
+const HEARTBEAT_INTERVAL_MS = 15 * 60 * 1000;
+let cachedToken = null;
+let lastHeartbeatAt = 0;
 
 /**
  * Registers for FCM push notifications and wires up all message handlers.
@@ -60,6 +69,19 @@ export function useNotifications(onDealOpen, { requestPermission = false } = {})
           }
         }
 
+        // ── Foreground heartbeat ─────────────────────────────────────────────
+        // Wired unconditionally: it no-ops until a token exists, so it costs
+        // nothing for users who have not yet granted notification permission.
+        const appStateSub = AppState.addEventListener("change", (state) => {
+          if (state !== "active") return;
+          if (!cachedToken) return;
+          if (Date.now() - lastHeartbeatAt < HEARTBEAT_INTERVAL_MS) return;
+          registerToken(cachedToken);
+        });
+        // Wrapped rather than passed as `appStateSub.remove`: the bare method
+        // would be invoked unbound by the cleanup loop.
+        track(() => appStateSub.remove());
+
         // ── Quit-state tap (app launched by tapping a notification) ──────────
         const initialNotification = await messaging().getInitialNotification();
         if (initialNotification && !cancelled) {
@@ -102,6 +124,10 @@ function reportPushOpen(dealId) {
  * The server upserts by token so this is always safe to call.
  */
 async function registerToken(token) {
+  cachedToken = token;
+  // Stamped before the request, not after: a failed call should still hold the
+  // throttle open, otherwise an offline device retries on every foreground.
+  lastHeartbeatAt = Date.now();
   try {
     const res = await fetch(`${API_BASE}/register-device`, {
       method: "POST",

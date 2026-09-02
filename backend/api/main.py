@@ -607,6 +607,11 @@ def admin_mobile_manifest():
 def register_device(data: dict):
     """Register a push token (FCM or Expo) — stored in memory + Supabase for persistence.
     Idempotent: re-registering the same token is a no-op (upsert by token).
+
+    The app also calls this on every foreground, so the last_seen stamp below is
+    what makes retention measurable: previously last_seen was only ever set by
+    its column default at insert, so it equalled created_at for every device and
+    any "active users" number derived from it was really an install count.
     """
     token = data.get("token", "").strip()
     if not token or not _valid_push_token(token):
@@ -615,10 +620,15 @@ def register_device(data: dict):
     already_known = token in device_tokens
     device_tokens.add(token)
 
-    # Persist to Supabase — upsert deduplicates by primary key (token)
+    # Persist to Supabase — upsert deduplicates by primary key (token).
+    # created_at is deliberately absent from the payload so an upsert over an
+    # existing device refreshes last_seen without rewriting its install date.
     try:
         db = get_db_admin()
-        db.table("push_tokens").upsert({"token": token}).execute()
+        db.table("push_tokens").upsert({
+            "token": token,
+            "last_seen": datetime.now(timezone.utc).isoformat(),
+        }).execute()
     except Exception as e:
         print(f"[PUSH] DB upsert failed (in-memory fallback): {e}")
 
@@ -1103,6 +1113,69 @@ def push_stats(days: int = 14):
         ctr = round(a["open"] / a["sent"] * 100, 1) if a["sent"] else None
         out.append({"day": day, "variant": variant, **a, "ctr_pct": ctr})
     return {"rows": out}
+
+
+@app.get("/admin/retention")
+def retention(days: int = 30):
+    """Device retention from push_tokens.last_seen.
+
+    Only meaningful for devices seen after the last_seen stamp shipped — rows
+    written before that have last_seen == created_at and would read as
+    "active on install day, never again". Those are reported separately as
+    `uninstrumented` rather than silently counted as churned, so the active
+    percentages stay honest while the old cohort ages out.
+    """
+    try:
+        rows = (get_db_admin().table("push_tokens")
+                .select("created_at,last_seen").execute().data) or []
+    except Exception as e:
+        log_exc("retention", e)
+        return {"error": "unavailable"}
+
+    now = datetime.now(timezone.utc)
+
+    def _parse(s):
+        if not s:
+            return None
+        s = s.replace("Z", "+00:00")
+        # Postgres emits a variable number of fractional digits; fromisoformat
+        # on 3.9 accepts exactly 3 or 6, so normalise to 6.
+        m = re.match(r"(.*\.)(\d+)(.*)", s)
+        if m:
+            s = m.group(1) + m.group(2).ljust(6, "0")[:6] + m.group(3)
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            return None
+
+    total = len(rows)
+    instrumented, uninstrumented, buckets = 0, 0, {1: 0, 3: 0, 7: 0, 14: 0, 30: 0}
+    for r in rows:
+        created, seen = _parse(r.get("created_at")), _parse(r.get("last_seen"))
+        if not seen:
+            uninstrumented += 1
+            continue
+        # A device that has never come back looks identical to one that was
+        # never instrumented; treat the ambiguous case as uninstrumented.
+        if created and (seen - created).total_seconds() < 60:
+            uninstrumented += 1
+            continue
+        instrumented += 1
+        age_days = (now - seen).total_seconds() / 86400
+        for d in buckets:
+            if age_days < d:
+                buckets[d] += 1
+
+    return {
+        "total_devices": total,
+        "instrumented": instrumented,
+        "uninstrumented": uninstrumented,
+        "active": {f"d{d}": n for d, n in sorted(buckets.items())},
+        "active_pct_of_instrumented": {
+            f"d{d}": (round(n / instrumented * 100, 1) if instrumented else None)
+            for d, n in sorted(buckets.items())
+        },
+    }
 
 
 @app.get("/d/{code}")
