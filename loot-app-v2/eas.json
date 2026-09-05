@@ -9,7 +9,8 @@
       },
       "env": {
         "GOOGLE_SERVICES_JSON": "$GOOGLE_SERVICES_JSON"
-      }
+      },
+      "channel": "preview"
     },
     "production": {
       "android": {
@@ -17,7 +18,8 @@
       },
       "env": {
         "GOOGLE_SERVICES_JSON": "$GOOGLE_SERVICES_JSON"
-      }
+      },
+      "channel": "production"
     },
     "production-local": {
       "android": {
@@ -25,7 +27,8 @@
       },
       "env": {
         "GOOGLE_SERVICES_JSON": "./google-services.json"
-      }
+      },
+      "channel": "production"
     },
     "staging-local": {
       "android": {

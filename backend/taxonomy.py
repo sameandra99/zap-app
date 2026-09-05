@@ -57,6 +57,31 @@ def is_excluded(text: str) -> bool:
     return not NOT_APPAREL_GUARD_RE.search(text)
 
 
+# ── 1b. Curated D2C brands (UCP) — exempt from the apparel exclusion ──────────
+# The apparel ban is a MARKETPLACE quality decision: on Amazon/Flipkart, apparel
+# is an endless stream of unbranded junk we can't vet, so we drop the category
+# wholesale. It was never a judgement about clothes.
+#
+# D2C brands ingested over UCP are the opposite case — a hand-picked shortlist,
+# live prices straight from the brand's own catalogue, and a real compare-at
+# price rather than an LLM's guess at an MRP. Half that shortlist IS apparel
+# (Snitch, Bonkers Corner, Off Duty, Suta …), so applying the marketplace rule
+# here would silently delete most of the feed we just built.
+#
+# Keyed on the `source_channel` prefix the UCP ingest writes ("ucp:<brand>")
+# rather than a copy of the brand list. A hardcoded list here would have to be
+# updated in lockstep with pipeline/ucp_ingest.py every time a brand is added,
+# and the failure mode of forgetting is silent — the brand's apparel simply
+# never appears in the feed. The prefix cannot drift.
+D2C_SOURCE_PREFIX = "ucp:"
+
+
+def is_curated_d2c(source_channel: str) -> bool:
+    """True if this deal came from a vetted D2C brand over UCP, in which case
+    category exclusions written for marketplace noise should not apply."""
+    return bool(source_channel) and source_channel.strip().lower().startswith(D2C_SOURCE_PREFIX)
+
+
 # ── 2. Desirability ───────────────────────────────────────────────────────────
 # Brands people recognise. THIS LIST IS A CURATION LEVER — adding a name makes
 # its deals push-eligible.

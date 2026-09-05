@@ -2,35 +2,37 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "loot-deals",
-      "runtimeExecutable": "npx",
-      "runtimeArgs": ["serve", "-p", "4321", "loot-deals"],
-      "port": 4321
+      "name": "market-pulse",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4601",
+        "--directory",
+        "/Users/sameandra/loot deals/market-pulse"
+      ],
+      "port": 4601
     },
     {
-      "name": "liftlog-web",
+      "name": "ui-proto",
+      "runtimeExecutable": "python3",
+      "runtimeArgs": [
+        "-m",
+        "http.server",
+        "4611",
+        "--directory",
+        "/private/tmp/claude-502/-Users-sameandra-loot-deals/b688b60e-22ce-4600-886b-375cc77e29bb/scratchpad"
+      ],
+      "port": 4611
+    },
+    {
+      "name": "loot-api",
       "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/sameandra/liftlog && npx expo start --web --port 8082"],
-      "port": 8082
-    }
-  ,{
-      "name": "admin-preview",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd '/Users/sameandra/loot deals/backend/api' && python3 -m http.server 4322"],
-      "port": 4322
-    }
-  ,{
-      "name": "export360-web",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd /Users/sameandra/export360/web && npm run dev"],
-      "port": 3001,
-      "autoPort": true
-    }
-  ,{
-      "name": "zap-screenshots",
-      "runtimeExecutable": "bash",
-      "runtimeArgs": ["-c", "cd '/Users/sameandra/Library/Application Support/Claude/local-agent-mode-sessions/skills-plugin/77899f9f-80ea-4460-bab5-e57ba5f8894c/01633cd8-3329-492f-9e32-e4e2cfd98e3b/skills/web-artifacts-builder/zap-screenshots' && python3 -m http.server 4325"],
-      "port": 4325
+      "runtimeArgs": [
+        "-lc",
+        "cd '/Users/sameandra/loot deals/backend' && set -a && source ./.env && set +a && export ADMIN_PASSWORD=testpw && PYTHONPATH=\"$PWD:$PWD/api\" venv/bin/python -m uvicorn api.main:app --port 4620"
+      ],
+      "port": 4620
     }
   ]
 }

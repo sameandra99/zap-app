@@ -34,13 +34,57 @@ body{font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif;b
 .dom-btn.approve:hover{background:#BBF7D0}
 .dom-btn.block{background:#FEE2E2;color:#B91C1C}
 .dom-btn.block:hover{background:#FECACA}
-.tab:not(.active-all):not(.active-posted):not(.active-filtered):not(.active-linkops):not(.active-domains):not(.active-apptabs):not(.active-hot){background:#F0EDE8;color:#78716C}
+.tab:not(.active-all):not(.active-posted):not(.active-filtered):not(.active-linkops):not(.active-domains):not(.active-apptabs):not(.active-hot):not(.active-lists){background:#F0EDE8;color:#78716C}
 .tab.active-hot{background:#D97706;color:#fff}
+.tab.active-lists{background:#0F766E;color:#fff}
 .toolbar{display:flex;align-items:center;gap:8px;padding:12px 20px;background:#fff}
 .toolbar input{flex:1;padding:7px 12px;border:1px solid #DDD;border-radius:6px;font-size:13px;font-family:inherit}
 .btn-refresh{padding:7px 14px;border-radius:6px;background:#F0EDE8;border:none;font-size:12px;font-weight:600;cursor:pointer;font-family:inherit}
 .btn-refresh:hover{background:#E5E2DC}
 .table-wrap{overflow-x:auto;padding:0 20px 24px}
+
+/* ---- curation ---- */
+.cur{display:grid;grid-template-columns:300px 1fr;gap:18px;padding-top:14px;align-items:start}
+@media(max-width:900px){.cur{grid-template-columns:1fr}}
+.panel{background:#fff;border-radius:10px;box-shadow:0 1px 3px rgba(0,0,0,.06);padding:14px}
+.panel h3{margin:0 0 10px;font-size:13px;font-weight:800;letter-spacing:.04em;
+  text-transform:uppercase;color:#78716C}
+.listrow{display:flex;align-items:center;gap:8px;padding:9px 10px;border-radius:8px;cursor:pointer;
+  border:1px solid transparent}
+.listrow:hover{background:#FAF9F7}
+.listrow.on{background:#F0FDFA;border-color:#0F766E}
+.listrow b{font-size:13px;font-weight:700}
+.listrow small{display:block;color:#A8A29E;font-size:11px;margin-top:1px}
+.pill{font-size:10px;font-weight:800;padding:2px 7px;border-radius:10px;letter-spacing:.03em}
+.pill.live{background:#DCFCE7;color:#166534}
+.pill.draft{background:#F5F5F4;color:#A8A29E}
+.cin{width:100%;padding:8px 10px;border:1px solid #E7E5E4;border-radius:7px;font:inherit;
+  font-size:13px;margin-bottom:8px;font-family:inherit}
+.cbtn{padding:8px 14px;border-radius:7px;border:none;background:#0F766E;color:#fff;
+  font:inherit;font-size:13px;font-weight:700;cursor:pointer}
+.cbtn.ghost{background:#F5F5F4;color:#57534E}
+.cbtn.danger{background:#FEE2E2;color:#B91C1C}
+.cbtn:disabled{opacity:.5;cursor:not-allowed}
+.pgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(150px,1fr));gap:12px;margin-top:12px}
+.pcard{background:#fff;border:1px solid #EFEDEA;border-radius:9px;overflow:hidden;position:relative}
+.pcard img{width:100%;aspect-ratio:3/4;object-fit:cover;display:block;background:#FAF9F7}
+.pcard .pi{padding:8px 9px 10px}
+.pcard .pt{font-size:12px;line-height:1.35;height:32px;overflow:hidden;color:#44403C}
+.pcard .pb{font-size:10.5px;font-weight:700;color:#A8A29E;text-transform:uppercase;
+  letter-spacing:.05em;margin-bottom:3px}
+.pcard .pp{font-size:13px;font-weight:800;margin-top:5px}
+.pcard .pp s{font-weight:400;color:#A8A29E;font-size:11px;margin-left:4px}
+.pcard .off{color:#0F766E;font-size:11px;font-weight:700;margin-left:5px}
+.padd{position:absolute;top:7px;right:7px;width:27px;height:27px;border-radius:50%;border:none;
+  background:rgba(255,255,255,.95);box-shadow:0 1px 4px rgba(0,0,0,.18);font-size:16px;
+  cursor:pointer;line-height:1;color:#1C1917}
+.padd:hover{background:#0F766E;color:#fff}
+.padd.rm{background:#FEE2E2;color:#B91C1C}
+.chips2{display:flex;flex-wrap:wrap;gap:6px;margin:8px 0 4px}
+.chip2{padding:5px 11px;border-radius:16px;border:1px solid #E7E5E4;background:#fff;
+  font-size:12px;font-weight:600;cursor:pointer;color:#57534E;font-family:inherit}
+.chip2.on{background:#1C1917;color:#fff;border-color:#1C1917}
+.note2{font-size:11.5px;color:#A8A29E;line-height:1.5}
 table{width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;box-shadow:0 1px 3px rgba(0,0,0,.06);margin-top:12px}
 th{background:#F5F3EF;padding:10px 12px;text-align:left;font-size:11px;font-weight:700;color:#78716C;text-transform:uppercase;letter-spacing:.04em;border-bottom:1px solid #EEE;white-space:nowrap}
 td{padding:6px 10px;font-size:12px;border-bottom:1px solid #F5F3EF;vertical-align:middle}
@@ -64,6 +108,8 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
 .cta-link{font-size:12px;font-weight:600;color:#fff;text-decoration:none;padding:4px 8px;border-radius:4px;background:#0369A1;display:inline-block;white-space:nowrap}
 .cta-link:hover{background:#0284C7}
 .cta-empty{font-size:11px;color:#C9B8B3}
+.rating-badge{font-size:11px;color:#92600C;margin-top:4px;white-space:nowrap}
+.clicks-badge{font-size:11px;font-weight:700;color:#0369A1;margin-top:4px;white-space:nowrap}
 .actions{display:flex;gap:4px;white-space:nowrap}
 .btn-approve{padding:4px 10px;border-radius:4px;background:#DCFCE7;color:#15803D;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s ease}
 .btn-approve:hover{background:#BBF7D0}
@@ -98,6 +144,10 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
 .btn-pin:disabled{opacity:.5;cursor:not-allowed}
 .btn-pin.pinned{background:#F59E0B;color:#fff}
 .btn-pin.pinned:hover{background:#D97706}
+.btn-x-post{padding:4px 10px;border-radius:4px;background:#E8F5FE;color:#0F1419;border:none;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap;transition:background 0.15s ease}
+.btn-x-post:hover{background:#CFEBFD}
+.btn-x-post:disabled{opacity:.5;cursor:not-allowed}
+.btn-x-post.sent{background:#DCFCE7;color:#15803D}
 /* App Tabs config */
 .apptab-move{padding:2px 8px;margin-right:4px;border-radius:4px;background:#F0EDE8;color:#57534E;border:none;font-size:11px;cursor:pointer}
 .apptab-move:hover{background:#E7E2DB}
@@ -165,6 +215,7 @@ tr:hover td{background:#FAFAF8;transition:background 0.15s ease}
   <button class="tab" onclick="setTab('domains',this)">🌐 Domains <span id="pendingDot" style="display:none;background:#DC2626;color:#fff;border-radius:10px;padding:1px 6px;font-size:10px;margin-left:4px"></span></button>
   <button class="tab" onclick="setTab('apptabs',this)">🗂 App Tabs</button>
   <button class="tab" onclick="setTab('hot',this)">🔥 Hot Deals</button>
+  <button class="tab" onclick="setTab('lists',this)">📚 Lists</button>
 </div>
 <div class="toolbar">
   <input type="text" id="search" placeholder="Search deals, channels, reasons..." oninput="render()"/>
@@ -293,6 +344,230 @@ function setTab(t, btn) {
   render();
 }
 
+// ── curation ────────────────────────────────────────────────────────────────
+// Lists are built from the live UCP catalogue rather than from the deal feed:
+// the feed only ever contains things already discounted, which is the wrong
+// pool to choose from when the question is "what is worth owning".
+let curLists = [], curCurators = [], curBrands = [];
+let curSel = null;            // list id being edited
+let curResults = [];          // last catalogue search
+let curBusy = false;
+
+async function curLoad() {
+  const [lists, brands] = await Promise.all([
+    fetch('/admin/lists').then(r => r.ok ? r.json() : Promise.reject(r)),
+    fetch('/admin/catalog/brands').then(r => r.json()).catch(() => ({brands: []}))
+  ]).catch(async err => {
+    const detail = err.json ? (await err.json().catch(() => ({}))).detail : '';
+    throw new Error(detail || 'Could not load lists');
+  });
+  curLists = lists.lists || [];
+  curCurators = lists.curators || [];
+  curBrands = brands.brands || [];
+  if (!curSel && curLists.length) curSel = curLists[0].id;
+}
+
+async function renderLists() {
+  const el = document.getElementById('content');
+  if (!curLists.length && !curBusy) {
+    el.innerHTML = '<div class="empty">Loading lists…</div>';
+    try { await curLoad(); }
+    catch (e) { el.innerHTML = `<div class="empty">${e.message}</div>`; return; }
+  }
+  const sel = curLists.find(l => l.id === curSel);
+  el.innerHTML = `
+   <div class="cur">
+    <div class="panel">
+      <h3>Lists</h3>
+      ${curLists.map(l => `
+        <div class="listrow ${l.id === curSel ? 'on' : ''}" onclick="curPick('${l.id}')">
+          <div style="flex:1;min-width:0">
+            <b>${esc(l.title)}</b>
+            <small>${esc(l.curator)} · ${(l.items || []).length} items</small>
+          </div>
+          <span class="pill ${l.published ? 'live' : 'draft'}">${l.published ? 'LIVE' : 'DRAFT'}</span>
+        </div>`).join('') || '<p class="note2">No lists yet.</p>'}
+      <hr style="border:none;border-top:1px solid #EFEDEA;margin:12px 0">
+      <input class="cin" id="newListTitle" placeholder="New list title">
+      <select class="cin" id="newListCurator">
+        ${curCurators.map(c => `<option value="${c.key}">${esc(c.handle)}</option>`).join('')}
+      </select>
+      <button class="cbtn" onclick="curCreate()">Create list</button>
+    </div>
+
+    <div>
+      ${sel ? curEditor(sel) : '<div class="panel"><p class="note2">Pick a list on the left.</p></div>'}
+      <div class="panel" style="margin-top:16px">
+        <h3>Browse the catalogue</h3>
+        <p class="note2">Searches live storefronts, not the deal feed — everything a
+          brand sells, discounted or not. Narrow the brands: all 91 takes about 30 seconds.</p>
+        <div style="display:flex;gap:8px;margin-top:10px">
+          <input class="cin" id="curQ" style="margin:0" placeholder="e.g. linen shirt, hoop earrings, tote"
+                 onkeydown="if(event.key==='Enter')curSearch()">
+          <button class="cbtn" onclick="curSearch()">Search</button>
+        </div>
+        <div class="chips2" id="curQuad">
+          ${['', 'A', 'B', 'C'].map(q => `<button class="chip2 ${q === '' ? 'on' : ''}"
+             data-q="${q}" onclick="curSetQuad('${q}')">${q ? 'Tier ' + q : 'All tiers'}</button>`).join('')}
+        </div>
+        <div class="chips2" id="curCat">
+          ${['', 'womenswear', 'jewellery', 'bags', 'footwear', 'home', 'beauty']
+            .map(c => `<button class="chip2 ${c === '' ? 'on' : ''}" data-c="${c}"
+              onclick="curSetCat('${c}')">${c || 'All categories'}</button>`).join('')}
+        </div>
+        <div id="curOut"></div>
+      </div>
+    </div>
+   </div>`;
+}
+
+function curEditor(l) {
+  const items = l.items || [];
+  return `<div class="panel">
+    <h3>${esc(l.title)}</h3>
+    <input class="cin" value="${esc(l.title)}" onchange="curPatch('${l.id}',{title:this.value})">
+    <input class="cin" value="${esc(l.blurb || '')}" placeholder="One line under the title"
+           onchange="curPatch('${l.id}',{blurb:this.value})">
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <select class="cin" style="width:auto;margin:0" onchange="curPatch('${l.id}',{curator:this.value})">
+        ${curCurators.map(c => `<option value="${c.key}" ${c.key === l.curator ? 'selected' : ''}>${esc(c.handle)}</option>`).join('')}
+      </select>
+      <button class="cbtn ${l.published ? 'ghost' : ''}"
+        onclick="curPatch('${l.id}',{published:${!l.published}})">${l.published ? 'Unpublish' : 'Publish'}</button>
+      <button class="cbtn ghost" onclick="curRefresh('${l.id}')">Refresh prices</button>
+      <button class="cbtn danger" onclick="curDelete('${l.id}')">Delete list</button>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:12px">
+      <input class="cin" id="curUrl" style="margin:0"
+             placeholder="Paste a product URL — brand.com/products/…"
+             onkeydown="if(event.key==='Enter')curAddUrl('${l.id}')">
+      <button class="cbtn" onclick="curAddUrl('${l.id}')">Add</button>
+    </div>
+    <p class="note2" style="margin-top:6px">${items.length} item${items.length === 1 ? '' : 's'}${
+      items.some(i => !i.in_stock) ? ' · <b style="color:#B91C1C">some unavailable</b>' : ''}</p>
+    <div class="pgrid">
+      ${items.map(i => `
+        <div class="pcard" style="${i.in_stock ? '' : 'opacity:.5'}">
+          <img src="${esc(i.image_url || '')}" alt="" loading="lazy">
+          <button class="padd rm" title="Remove" onclick="curRemove('${l.id}',${i.id})">×</button>
+          <div class="pi">
+            <div class="pb">${esc(i.brand || '')}</div>
+            <div class="pt">${esc(i.title || '')}</div>
+            <div class="pp">₹${((i.price || 0) / 100).toLocaleString('en-IN')}
+              ${i.list_price && i.list_price > i.price
+                ? `<s>₹${(i.list_price / 100).toLocaleString('en-IN')}</s>` : ''}</div>
+          </div>
+        </div>`).join('') || '<p class="note2">Nothing yet — search below or paste a URL.</p>'}
+    </div>
+  </div>`;
+}
+
+let curQuad = '', curCat = '';
+function curSetQuad(q) { curQuad = q; document.querySelectorAll('#curQuad .chip2')
+  .forEach(b => b.classList.toggle('on', b.dataset.q === q)); }
+function curSetCat(c) { curCat = c; document.querySelectorAll('#curCat .chip2')
+  .forEach(b => b.classList.toggle('on', b.dataset.c === c)); }
+
+function curPick(id) { curSel = id; renderLists(); }
+
+async function curSearch() {
+  const q = document.getElementById('curQ').value.trim();
+  const out = document.getElementById('curOut');
+  if (!q) return;
+  const n = curBrands.filter(b => (!curQuad || b.quadrant === curQuad)
+                               && (!curCat || b.category === curCat)).length;
+  out.innerHTML = `<p class="note2" style="margin-top:12px">Searching ${n} brands…</p>`;
+  const url = `/admin/catalog/search?q=${encodeURIComponent(q)}`
+            + `&quadrant=${curQuad}&category=${curCat}&per_brand=6`;
+  try {
+    const r = await fetch(url);
+    if (!r.ok) throw new Error((await r.json().catch(() => ({}))).detail || 'Search failed');
+    const d = await r.json();
+    curResults = d.products || [];
+    const failed = Object.keys(d.errors || {}).length;
+    out.innerHTML = `<p class="note2" style="margin-top:12px">${curResults.length} products from
+      ${d.brands_searched} brands${failed ? ` · ${failed} unreachable` : ''}</p>
+      <div class="pgrid">${curResults.map((p, i) => `
+        <div class="pcard">
+          <img src="${esc(p.image_url)}" alt="" loading="lazy">
+          <button class="padd" title="Add to list" onclick="curAddResult(${i})">+</button>
+          <div class="pi">
+            <div class="pb">${esc(p.brand)}</div>
+            <div class="pt">${esc(p.title)}</div>
+            <div class="pp">₹${(p.price / 100).toLocaleString('en-IN')}
+              ${p.discount_pct ? `<span class="off">-${p.discount_pct}%</span>` : ''}</div>
+          </div>
+        </div>`).join('')}</div>`;
+  } catch (e) {
+    out.innerHTML = `<p class="note2" style="margin-top:12px;color:#B91C1C">${esc(e.message)}</p>`;
+  }
+}
+
+async function curPost(url, body, okMsg) {
+  const r = await fetch(url, {method: 'POST', headers: {'Content-Type': 'application/json'},
+                              body: JSON.stringify(body || {})});
+  if (!r.ok) { alert((await r.json().catch(() => ({}))).detail || 'Failed'); return null; }
+  await curLoad(); renderLists();
+  return r;
+}
+
+async function curAddResult(i) {
+  if (!curSel) return alert('Pick a list first');
+  const scrollY = window.scrollY;
+  await curPost(`/admin/lists/${curSel}/items`, {product: curResults[i]});
+  window.scrollTo(0, scrollY);
+}
+
+async function curAddUrl(id) {
+  const input = document.getElementById('curUrl');
+  const url = input.value.trim();
+  if (!url) return;
+  input.disabled = true;
+  await curPost(`/admin/lists/${id}/items`, {url});
+  input.disabled = false;
+}
+
+async function curCreate() {
+  const title = document.getElementById('newListTitle').value.trim();
+  if (!title) return;
+  const curator = document.getElementById('newListCurator').value;
+  const r = await curPost('/admin/lists', {title, curator, position: curLists.length});
+  if (r) { curSel = (await r.json()).list.id; renderLists(); }
+}
+
+async function curPatch(id, body) {
+  await fetch(`/admin/lists/${id}`, {method: 'PATCH',
+    headers: {'Content-Type': 'application/json'}, body: JSON.stringify(body)});
+  await curLoad(); renderLists();
+}
+
+async function curRemove(listId, itemId) {
+  await fetch(`/admin/lists/${listId}/items/${itemId}`, {method: 'DELETE'});
+  await curLoad(); renderLists();
+}
+
+async function curDelete(id) {
+  if (!confirm('Delete this list and everything in it?')) return;
+  const r = await fetch(`/admin/lists/${id}`, {method: 'DELETE'});
+  if (!r.ok) return alert('Delete needs the admin key header');
+  curSel = null; await curLoad(); renderLists();
+}
+
+async function curRefresh(id) {
+  const out = document.getElementById('curOut');
+  out.innerHTML = '<p class="note2" style="margin-top:12px">Re-reading every item from its store…</p>';
+  const r = await fetch(`/admin/lists/${id}/refresh`, {method: 'POST'});
+  const d = await r.json().catch(() => ({}));
+  out.innerHTML = `<p class="note2" style="margin-top:12px">Checked ${d.checked ?? '?'} ·
+    ${d.ok ?? 0} updated · ${d.unavailable ?? 0} no longer available</p>`;
+  await curLoad(); renderLists();
+}
+
+function esc(v) {
+  return String(v == null ? '' : v).replace(/[&<>"']/g,
+    c => ({'&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'}[c]));
+}
+
 function fmtTime(iso) {
   if (!iso) return '—';
   const d = new Date(iso);
@@ -329,6 +604,10 @@ function render() {
   if (activeTab === 'hot') {
     return renderHotDeals();
   }
+  // Curation lives on its own data (UCP catalogue, not the deal feed)
+  if (activeTab === 'lists') {
+    return renderLists();
+  }
 
   let items = [];
 
@@ -343,7 +622,7 @@ function render() {
       ...allDeals.filter(d => !logDealIds.has(d.id)).map(d => ({
         type:'deal', is_valid:true, copy:d.copy, source_channel:d.source_channel,
         created_at:d.created_at, deal_id:d.id, image_url:d.image_url,
-        raw_text:d.raw_text || '',
+        raw_text:d.raw_text || '', rating:d.rating, rating_count:d.rating_count,
         llm_decision:{platform:d.platform, url:d.affiliate_url}
       }))
     ];
@@ -369,6 +648,9 @@ function render() {
     document.getElementById('content').innerHTML = '<div class="empty">No results.</div>';
     return;
   }
+
+  // Per-deal X short-link clicks (total + unique), keyed by deal id.
+  const clicksById = new Map(allDeals.map(d => [d.id, {c: d.x_clicks||0, u: d.x_clicks_unique||0}]));
 
   document.getElementById('content').innerHTML = `
     <table>
@@ -400,6 +682,8 @@ function render() {
           const isPosted = l.is_valid || l.type === 'deal';
           const platform = l.llm_decision?.platform || l.platform || '';
           const url = l.llm_decision?.url || l.affiliate_url || '';
+          const rating = l.rating;
+          const ratingCount = l.rating_count;
 
           const imgCell = imgUrl
             ? `<div class="img-cell"><img class="img-thumb" src="${esc(imgUrl)}" onerror="this.style.display='none'"/></div>`
@@ -410,6 +694,7 @@ function render() {
             ? `<div class="actions">
                 <button class="btn-pin${isPinned ? ' pinned' : ''}" onclick="togglePin(this, '${esc(dealId)}', ${isPinned})">${isPinned ? '📌 Unpin' : '📌 Pin'}</button>
                 <button class="btn-push" onclick="pushDeal(this, '${esc(dealId)}', ${JSON.stringify(copy).replace(/"/g,'&quot;')})">📤 Push</button>
+                <button class="btn-x-post" onclick="postToX(this, '${esc(dealId)}')">🐦 Post to X</button>
                 <button class="btn-edit" onclick="openEdit('${esc(dealId)}', -1, ${JSON.stringify(copy).replace(/"/g,'&quot;')}, ${JSON.stringify(imgUrl).replace(/"/g,'&quot;')}, ${JSON.stringify(raw).replace(/"/g,'&quot;')})">✏️ Edit</button>
                 <button class="btn-remove" onclick="removeDeal('${esc(dealId)}')">🗑 Remove</button>
                </div>`
@@ -423,9 +708,16 @@ function render() {
             ? `<span class="badge auto-posted">✅ Auto<br/>Posted</span>`
             : `<span class="badge filtered">❌ Filtered</span>`;
 
+          const ratingBadge = (rating != null)
+            ? `<div class="rating-badge">⭐ ${rating}${ratingCount != null ? ` (${ratingCount.toLocaleString()})` : ''}</div>`
+            : '';
+          const clk = clicksById.get(dealId);
+          const clicksBadge = (clk && clk.c)
+            ? `<div class="clicks-badge">👆 ${clk.c.toLocaleString()} click${clk.c!==1?'s':''}${(clk.u && clk.u < clk.c) ? ` · ${clk.u.toLocaleString()} unique` : ''}</div>`
+            : '';
           const ctaBtn = url
-            ? `<a href="${esc(url)}" target="_blank" class="cta-link">${esc(platform || 'Link')} →</a>`
-            : `<span class="cta-empty">—</span>`;
+            ? `<a href="${esc(url)}" target="_blank" class="cta-link">${esc(platform || 'Link')} →</a>${ratingBadge}${clicksBadge}`
+            : `<span class="cta-empty">—</span>${clicksBadge}`;
 
           return `<tr>
             <td>${badge}</td>
@@ -1135,6 +1427,47 @@ async function pushDeal(btn, dealId, copy) {
     }
   } catch(e) {
     btn.textContent = orig; btn.disabled = false;
+    showToast(`❌ ${e.message}`);
+  }
+}
+
+async function postToX(btn, dealId) {
+  if (!dealId) { showToast('No deal id'); return; }
+  const orig = btn.textContent;
+  btn.disabled = true;
+  btn.textContent = 'Drafting…';
+
+  // Open the tab synchronously, inside the click handler, so popup blockers
+  // don't kill it once the caption fetch (below) resolves asynchronously.
+  const composeTab = window.open('', '_blank');
+
+  try {
+    const res = await adminTabFetch(`/admin/deals/${encodeURIComponent(dealId)}/x-caption`, { method: 'POST' });
+    if (!res.ok) {
+      if (composeTab) composeTab.close();
+      btn.disabled = false; btn.textContent = orig;
+      showToast(`❌ Draft failed (${res.status})`);
+      return;
+    }
+    const { caption } = await res.json();
+
+    // X's own composer, pre-filled — no API, no cost, no ToS risk (it's just
+    // the real x.com UI). Caption already ends with the affiliate link, so no
+    // separate url= param. Review, optionally attach the image, then Post —
+    // or hit the native Schedule icon to queue it for later in the day.
+    const intentUrl = 'https://x.com/intent/post?text=' + encodeURIComponent(caption);
+    if (composeTab) composeTab.location.href = intentUrl;
+    else window.open(intentUrl, '_blank'); // popup was blocked — try once more directly
+
+    btn.textContent = '✓ Opened';
+    btn.classList.add('sent');
+    showToast('🐦 X composer opened — attach an image if you want one, then Post or Schedule');
+    setTimeout(() => {
+      btn.disabled = false; btn.textContent = orig; btn.classList.remove('sent');
+    }, 2500);
+  } catch (e) {
+    if (composeTab) composeTab.close();
+    btn.disabled = false; btn.textContent = orig;
     showToast(`❌ ${e.message}`);
   }
 }
