@@ -100,6 +100,16 @@ function formatINR(n) {
   return "₹" + Number(n).toLocaleString("en-IN");
 }
 
+// MRP to show alongside the deal price, struck through. Only when it is above
+// the deal price — a UCP deal carries the brand's own compare-at price, which is
+// a far better anchor than the LLM-guessed MRP this was originally removed for.
+function bestMRP(deal) {
+  const dp = _toRupees(deal.deal_price);
+  const op = _toRupees(deal.original_price);
+  if (!op || !dp || op <= dp) return null;
+  return formatINR(op);
+}
+
 function _toRupees(v) {
   if (!v) return null;
   const digits = String(v).replace(/[^\d]/g, "");
@@ -169,7 +179,7 @@ function socialLabel(deal) {
   return null;
 }
 
-function PriceRow({ price, pct }) {
+function PriceRow({ price, mrp, pct }) {
   if (!price && pct == null) return null;
   return (
     <View style={styles.priceRow}>
@@ -178,6 +188,7 @@ function PriceRow({ price, pct }) {
           {price}
         </Text>
       )}
+      {!!mrp && <Text style={styles.mrp} numberOfLines={1}>{mrp}</Text>}
       {pct != null && (
         <View style={styles.discBadge}>
           <Text style={styles.discText}>{pct}% OFF</Text>
@@ -227,6 +238,7 @@ export default function DealCard({ deal, onBuy, highlighted = false }) {
   const [opening, setOpening] = React.useState(false);
   const price = bestPrice(deal);
   const pct = parseDiscount(deal.discount_pct);
+  const mrp = bestMRP(deal);
   const targetUrl = deal.affiliate_url || null;
   const hasImage = !!deal.image_url;
 
@@ -261,7 +273,7 @@ export default function DealCard({ deal, onBuy, highlighted = false }) {
       <View style={styles.body}>
         <MerchantMark platform={deal.platform} />
         <TitleBlock deal={deal} />
-        <PriceRow price={price} pct={pct} />
+        <PriceRow price={price} mrp={mrp} pct={pct} />
         <MetaLine deal={deal} />
         {Cta}
       </View>
@@ -319,7 +331,12 @@ const styles = StyleSheet.create({
 
   // Price hero + discount — price is the strongest element; badge is secondary
   priceRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  price: { fontSize: 26, fontWeight: "800", color: "#1C1917", letterSpacing: -0.5 },
+  // 17, down from 26. At 26 the price outweighed the product title (15) nearly
+  // two to one and the row shouted, more so once the MRP sat beside it. Weight
+  // and colour carry the hierarchy instead: 800 against the title's 600, and
+  // near-black against warm grey, so the price still reads first.
+  price: { fontSize: 17, fontWeight: "800", color: "#1C1917", letterSpacing: -0.3 },
+  mrp: { fontSize: 12, color: "#A8A29E", textDecorationLine: "line-through", marginLeft: 7 },
   discBadge: {
     backgroundColor: "#16A34A",
     borderRadius: 5,

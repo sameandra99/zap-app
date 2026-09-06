@@ -1391,7 +1391,7 @@ async def internal_push_deal(data: dict, request: Request):
     try:
         deal = db.table("deals").select(
             "id,copy,display_title,platform,image_url,deal_price,original_price,"
-            "discount_pct,rating,rating_count,pushed_at,coupon_code"
+            "discount_pct,rating,rating_count,pushed_at,coupon_code,source_channel"
         ).eq("id", deal_id).single().execute().data
     except Exception as e:
         log_exc("push-deal lookup", e)
@@ -1407,10 +1407,18 @@ async def internal_push_deal(data: dict, request: Request):
     # never qualify. Discount depth deliberately does NOT matter.
     _text = f"{deal.get('display_title') or ''} {deal.get('copy') or ''}"
     _price = taxonomy.parse_price(deal.get("deal_price"))
-    if taxonomy.is_excluded(_text):
-        return {"status": "skip", "reason": "excluded category"}
-    if not taxonomy.is_desirable(_text, _price):
-        return {"status": "skip", "reason": "not desirable (no known brand or wanted product type)"}
+    # A curated D2C brand has already passed the only test this gate is trying to
+    # apply. The desirability rules exist to filter unvettable marketplace junk by
+    # asking "is this a brand anyone knows?" — which Nobero, Off Duty and Nestasia
+    # all fail while being exactly what we chose to stock. Without this exemption
+    # the gate rejected 12 of 12 sampled D2C deals and auto-push went silent the
+    # day the feed switched over.
+    _d2c = taxonomy.is_curated_d2c(deal.get("source_channel") or "")
+    if not _d2c:
+        if taxonomy.is_excluded(_text):
+            return {"status": "skip", "reason": "excluded category"}
+        if not taxonomy.is_desirable(_text, _price):
+            return {"status": "skip", "reason": "not desirable (no known brand or wanted product type)"}
 
     # Optional extra knobs, disabled by default (0): a discount floor and a
     # price floor, for tightening later without a deploy.
