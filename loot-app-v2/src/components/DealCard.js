@@ -43,6 +43,7 @@ const BRAND_NAMES = {
   "dot-and-key": "Dot & Key", "joker-and-witch": "Joker & Witch",
   neemans: "Neeman's", "the-man-company": "The Man Company",
   "bonkers-corner": "Bonkers Corner", "urban-monkey": "Urban Monkey",
+  "sleep-company": "The Sleep Company", "the-label-life": "The Label Life",
   "gully-labs": "Gully Labs", "off-duty": "Off Duty", "campus-sutra": "Campus Sutra",
   "the-bear-house": "The Bear House", "bacca-bucci": "Bacca Bucci",
   "almost-gods": "Almost Gods", "what-the-flex": "What The Flex",
@@ -57,40 +58,39 @@ function prettifyBrand(slug) {
     .join(" ");
 }
 
-// Stable colour per brand so a chip doesn't change hue between renders, without
-// hand-picking 40+ palette entries. Same slug always yields the same hue.
-function brandColor(slug) {
-  let h = 0;
-  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) % 360;
-  return `hsl(${h}, 52%, 40%)`;
-}
 
+// Show a real logo when one is bundled, otherwise the brand's own name — never a
+// coloured monogram. Of the 28 D2C brands live in the feed, every storefront
+// publishes a logo but only five are square and large enough to survive an 18px
+// tile; the rest are wordmarks up to 8:1, or 16px favicons. A monogram fallback
+// for the other 23 is a placeholder pretending to be a mark, and the hash-picked
+// hue carries no meaning. The name set in caps reads as the brand itself, costs
+// no assets, and renders correctly for a brand added on the backend the day it
+// appears — no app release per brand.
 function MerchantMark({ platform }) {
   const key = (platform || "other").toLowerCase();
   const known = PLATFORM_META[key];
   const name = known ? known.name : BRAND_NAMES[key] || prettifyBrand(key);
-  const m = known || {
-    name,
-    color: brandColor(key),
-    initial: (name[0] || "%").toUpperCase(),
-  };
   const logo = PLATFORM_LOGOS[key] || null;
   const [logoFailed, setLogoFailed] = React.useState(false);
+  const showLogo = logo && !logoFailed;
   return (
     <View style={styles.merchantRow}>
-      {logo && !logoFailed ? (
-        <Image
-          source={logo}
-          style={styles.merchantLogoImg}
-          resizeMode="contain"
-          onError={() => setLogoFailed(true)}
-        />
+      {showLogo ? (
+        <>
+          <Image
+            source={logo}
+            style={styles.merchantLogoImg}
+            resizeMode="contain"
+            onError={() => setLogoFailed(true)}
+          />
+          <Text style={styles.merchantName}>{name}</Text>
+        </>
       ) : (
-        <View style={[styles.merchantLogo, { backgroundColor: m.color }]}>
-          <Text style={styles.merchantInitial}>{m.initial.toUpperCase()}</Text>
-        </View>
+        <Text style={styles.merchantWordmark} numberOfLines={1}>
+          {name.toUpperCase()}
+        </Text>
       )}
-      <Text style={styles.merchantName}>{m.name}</Text>
     </View>
   );
 }
@@ -309,13 +309,13 @@ const styles = StyleSheet.create({
 
   // Merchant mark
   merchantRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
-  merchantLogo: {
-    width: 17, height: 17, borderRadius: 5,
-    alignItems: "center", justifyContent: "center", marginRight: 6,
-  },
-  merchantInitial: { color: "#fff", fontSize: 11, fontWeight: "800" },
   merchantLogoImg: { width: 18, height: 18, borderRadius: 4, marginRight: 6 },
   merchantName: { fontSize: 12, fontWeight: "700", color: "#57534E", letterSpacing: 0.1 },
+  // Wordmark case: darker and tracked out, so the name reads as the brand rather
+  // than as a caption next to a missing logo.
+  merchantWordmark: {
+    fontSize: 11, fontWeight: "800", color: "#1C1917", letterSpacing: 0.9,
+  },
 
   // Price hero + discount — price is the strongest element; badge is secondary
   priceRow: { flexDirection: "row", alignItems: "center", marginBottom: 6 },
