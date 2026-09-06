@@ -32,9 +32,48 @@ const PLATFORM_LOGOS = {
   blinkit:  require("../assets/logos/blinkit.png"),
 };
 
+// D2C brands ingested over UCP. `platform` holds the brand slug, and unlike the
+// marketplaces above there's no bundled logo — the brand IS the identity here,
+// so the card shows its real name rather than the generic "Deal" chip.
+// Only names that don't survive a title-case of the slug need an entry.
+const BRAND_NAMES = {
+  giva: "GIVA", palmonas: "PALMONAS", bluorng: "BLUORNG", xyxx: "XYXX",
+  wrogn: "WROGN", genrage: "GENRAGE", fuaark: "FUAARK", blissclub: "BlissClub",
+  technosport: "TechnoSport", "sugar-cosmetics": "SUGAR", mcaffeine: "mCaffeine",
+  "dot-and-key": "Dot & Key", "joker-and-witch": "Joker & Witch",
+  neemans: "Neeman's", "the-man-company": "The Man Company",
+  "bonkers-corner": "Bonkers Corner", "urban-monkey": "Urban Monkey",
+  "gully-labs": "Gully Labs", "off-duty": "Off Duty", "campus-sutra": "Campus Sutra",
+  "the-bear-house": "The Bear House", "bacca-bucci": "Bacca Bucci",
+  "almost-gods": "Almost Gods", "what-the-flex": "What The Flex",
+};
+
+// "campus-sutra" → "Campus Sutra". Keeps a brand added on the backend rendering
+// sensibly before anyone ships an app update for it.
+function prettifyBrand(slug) {
+  return slug
+    .split("-")
+    .map((w) => (w ? w[0].toUpperCase() + w.slice(1) : w))
+    .join(" ");
+}
+
+// Stable colour per brand so a chip doesn't change hue between renders, without
+// hand-picking 40+ palette entries. Same slug always yields the same hue.
+function brandColor(slug) {
+  let h = 0;
+  for (let i = 0; i < slug.length; i++) h = (h * 31 + slug.charCodeAt(i)) % 360;
+  return `hsl(${h}, 52%, 40%)`;
+}
+
 function MerchantMark({ platform }) {
   const key = (platform || "other").toLowerCase();
-  const m = PLATFORM_META[key] || PLATFORM_META.other;
+  const known = PLATFORM_META[key];
+  const name = known ? known.name : BRAND_NAMES[key] || prettifyBrand(key);
+  const m = known || {
+    name,
+    color: brandColor(key),
+    initial: (name[0] || "%").toUpperCase(),
+  };
   const logo = PLATFORM_LOGOS[key] || null;
   const [logoFailed, setLogoFailed] = React.useState(false);
   return (

@@ -455,7 +455,10 @@ def privacy_policy():
 # raw_text, resolved_url, etc.) the client never reads.
 _DEAL_COLUMNS = (
     "id,copy,display_title,platform,deal_price,original_price,discount_pct,"
-    "coupon_code,affiliate_url,image_url,clicks,pinned,pin_order,created_at"
+    "coupon_code,affiliate_url,image_url,clicks,pinned,pin_order,created_at,"
+    # source_channel rides along so the feed can tell a curated D2C deal from a
+    # scraped marketplace one without a second lookup (see is_curated_d2c).
+    "source_channel"
 )
 
 
@@ -472,10 +475,17 @@ def get_deals(limit: int = 50, offset: int = 0):
     moment an image is backfilled. Toggle off with HIDE_IMAGELESS_DEALS=0."""
     db = get_db()
 
+    # Scheduled release: the D2C ingest stages a brand's whole eligible catalogue
+    # at once and stamps each row with a publish_at so it trickles into the feed a
+    # few per hour. NULL means "publish immediately" — every scraped deal predates
+    # this column, so the old behaviour is preserved exactly.
+    now_iso = datetime.now(timezone.utc).isoformat()
+
     def _feed_query(columns):
         q = db.table("deals").select(columns)
         if HIDE_IMAGELESS_DEALS:
             q = q.not_.is_("image_url", "null").neq("image_url", "")
+        q = q.or_(f"publish_at.is.null,publish_at.lte.{now_iso}")
         return q.order("created_at", desc=True).range(offset, offset + limit - 1)
 
     try:
@@ -490,10 +500,14 @@ def get_deals(limit: int = 50, offset: int = 0):
     # the rule lives in ONE place (taxonomy.py) shared with push and Telegram
     # instead of being duplicated as SQL. The app over-fetches (200) for its
     # category tabs, so losing ~4% of a page is invisible.
+    # Curated D2C brands (UCP ingest) are exempt: the apparel ban targets
+    # unvettable marketplace clothing, and half the D2C shortlist is apparel by
+    # design. Without this, Snitch/Bonkers/Off Duty/Suta vanish from the feed.
     if EXCLUDE_CATEGORIES:
         deals = [
             d for d in deals
-            if not taxonomy.is_excluded(f"{d.get('display_title') or ''} {d.get('copy') or ''}")
+            if taxonomy.is_curated_d2c(d.get("source_channel"))
+            or not taxonomy.is_excluded(f"{d.get('display_title') or ''} {d.get('copy') or ''}")
         ]
     # Monetize app + web taps: add the Associates tag to Amazon links on the way
     # out (no-op until AMAZON_ASSOC_TAG is set). Stored URLs stay clean.
@@ -1938,6 +1952,221 @@ def reorder_tabs(data: dict):
 
 # In-memory store for admin overrides (for LLM learning)
 admin_overrides = []
+
+# ── curation: browse the catalogue, build lists ──────────────────────────────
+# The deal pipeline answers "what is cheap today". Curation answers "what is
+# worth owning", which needs the whole catalogue rather than the slice past a
+# discount bar — so these endpoints read UCP directly instead of the deals table.
+
+@app.get("/admin/catalog/brands")
+def catalog_brands():
+    """The roster, for the brand picker. Auth: admin_basic_auth middleware."""
+    import catalog
+    return {"brands": catalog.brands()}
+
+
+@app.get("/admin/catalog/search")
+def catalog_search(q: str, domains: str = "", per_brand: int = 8,
+                   quadrant: str = "", category: str = ""):
+    """Fan a query across brands and return flat product rows.
+
+    `domains` is a comma-separated allowlist; without it the search covers the
+    roster, optionally narrowed by quadrant or category. Searching all 91 brands
+    takes ~30 s, so the UI should pass a narrower set for anything interactive.
+    """
+    import catalog
+    if not q.strip():
+        raise HTTPException(status_code=400, detail="Query required")
+    if domains.strip():
+        picked = [d.strip() for d in domains.split(",") if d.strip()]
+    else:
+        picked = [b["domain"] for b in catalog.brands()
+                  if (not quadrant or b["quadrant"] == quadrant)
+                  and (not category or b["category"] == category)]
+    if not picked:
+        raise HTTPException(status_code=400, detail="No brands matched")
+    result = catalog.search(picked, q.strip(), per_brand=max(1, min(per_brand, 24)))
+    result["products"].sort(key=lambda p: -p["discount_pct"])
+    return result
+
+
+@app.post("/admin/catalog/resolve")
+def catalog_resolve(data: dict):
+    """One pasted product URL → a row ready to drop into a list."""
+    import catalog
+    url = (data or {}).get("url", "")
+    try:
+        return {"product": catalog.resolve_url(url)}
+    except (ValueError, LookupError) as e:
+        raise HTTPException(status_code=404, detail=str(e))
+    except Exception as e:
+        log_exc("catalog_resolve", e)
+        raise HTTPException(status_code=502, detail=f"Store unreachable ({type(e).__name__})")
+
+
+@app.get("/admin/lists")
+def get_lists():
+    """Every list with its items, ordered. Small enough to send whole — the
+    admin edits across lists constantly and paging would only add round trips."""
+    db = get_db_admin()
+    try:
+        lists = (db.table("curated_lists").select("*").order("position").execute().data) or []
+        items = (db.table("curated_list_items").select("*")
+                 .order("list_id").order("position").execute().data) or []
+        curators = (db.table("curators").select("*").execute().data) or []
+    except Exception as e:
+        log_exc("get_lists", e)
+        raise HTTPException(status_code=500,
+                            detail="Lists tables missing — run 2026-09-06_curated_lists.sql")
+    by_list = {}
+    for item in items:
+        by_list.setdefault(item["list_id"], []).append(item)
+    for lst in lists:
+        lst["items"] = by_list.get(lst["id"], [])
+    return {"lists": lists, "curators": curators}
+
+
+@app.post("/admin/lists")
+def create_list(data: dict):
+    """Create a list. Slug comes from the title unless one is supplied."""
+    db = get_db_admin()
+    title = str((data or {}).get("title", "")).strip()
+    if not title:
+        raise HTTPException(status_code=400, detail="Title required")
+    slug = str(data.get("id") or "").strip().lower()
+    if not slug:
+        slug = re.sub(r"[^a-z0-9]+", "-", title.lower()).strip("-")[:48]
+    row = {
+        "id": slug,
+        "title": title,
+        "blurb": str(data.get("blurb", "")).strip() or None,
+        "curator": str(data.get("curator", "deskdays")).strip() or "deskdays",
+        "position": int(data.get("position", 0)),
+        "published": bool(data.get("published", False)),
+    }
+    try:
+        db.table("curated_lists").insert(row).execute()
+    except Exception as e:
+        log_exc("create_list", e)
+        raise HTTPException(status_code=409, detail=f"Could not create '{slug}' — it may already exist")
+    return {"status": "created", "list": row}
+
+
+@app.patch("/admin/lists/{list_id}")
+def update_list(list_id: str, data: dict):
+    """Rename, re-blurb, reassign curator, reorder, publish or unpublish."""
+    db = get_db_admin()
+    update = {}
+    for field in ("title", "blurb", "curator"):
+        if field in data:
+            update[field] = str(data[field]).strip() or None
+    if "position" in data:
+        update["position"] = int(data["position"])
+    if "published" in data:
+        update["published"] = bool(data["published"])
+    if not update:
+        raise HTTPException(status_code=400, detail="Nothing to update")
+    update["updated_at"] = datetime.now(timezone.utc).isoformat()
+    db.table("curated_lists").update(update).eq("id", list_id).execute()
+    return {"status": "updated", "id": list_id, "fields": list(update.keys())}
+
+
+@app.delete("/admin/lists/{list_id}")
+def delete_list(list_id: str, _: None = Depends(_require_admin)):
+    """Items cascade with the list."""
+    db = get_db_admin()
+    db.table("curated_lists").delete().eq("id", list_id).execute()
+    return {"status": "deleted", "id": list_id}
+
+
+@app.post("/admin/lists/{list_id}/items")
+def add_list_item(list_id: str, data: dict):
+    """Add a product, either by pasted URL or by passing a row from search.
+
+    Resolving here rather than trusting the client means a list item always
+    carries a real price and image, whichever way it was added.
+    """
+    import catalog
+    db = get_db_admin()
+    product = (data or {}).get("product")
+    if not product:
+        url = str((data or {}).get("url", "")).strip()
+        if not url:
+            raise HTTPException(status_code=400, detail="Pass a url or a product")
+        try:
+            product = catalog.resolve_url(url)
+        except (ValueError, LookupError) as e:
+            raise HTTPException(status_code=404, detail=str(e))
+        except Exception as e:
+            log_exc("add_list_item.resolve", e)
+            raise HTTPException(status_code=502, detail=f"Store unreachable ({type(e).__name__})")
+
+    existing = (db.table("curated_list_items").select("position")
+                .eq("list_id", list_id).order("position", desc=True)
+                .limit(1).execute().data) or []
+    row = {
+        "list_id": list_id,
+        "variant_id": product.get("variant_id"),
+        "product_url": product.get("product_url"),
+        "domain": product.get("domain"),
+        "brand": product.get("brand"),
+        "title": product.get("title"),
+        "image_url": product.get("image_url"),
+        "price": product.get("price"),
+        "list_price": product.get("list_price"),
+        "currency": product.get("currency", "INR"),
+        "in_stock": bool(product.get("in_stock", True)),
+        "position": (existing[0]["position"] + 1) if existing else 0,
+        "added_by": str((data or {}).get("added_by", "admin")),
+        "checked_at": datetime.now(timezone.utc).isoformat(),
+    }
+    try:
+        db.table("curated_list_items").insert(row).execute()
+    except Exception as e:
+        log_exc("add_list_item", e)
+        raise HTTPException(status_code=409, detail="Already in this list")
+    return {"status": "added", "item": row}
+
+
+@app.delete("/admin/lists/{list_id}/items/{item_id}")
+def delete_list_item(list_id: str, item_id: int):
+    db = get_db_admin()
+    db.table("curated_list_items").delete().eq("id", item_id).eq("list_id", list_id).execute()
+    return {"status": "deleted", "id": item_id}
+
+
+@app.post("/admin/lists/{list_id}/refresh")
+def refresh_list(list_id: str):
+    """Re-read every item from its store: prices move and products get pulled.
+
+    A list showing a product that no longer exists is worse than one showing a
+    stale price, so anything that cannot be resolved is flagged out of stock
+    rather than deleted — an editor decides whether to replace it.
+    """
+    import catalog
+    db = get_db_admin()
+    items = (db.table("curated_list_items").select("*")
+             .eq("list_id", list_id).execute().data) or []
+    changed, gone = 0, 0
+    for item in items:
+        try:
+            fresh = catalog.resolve_url(item["product_url"])
+        except Exception:
+            db.table("curated_list_items").update(
+                {"in_stock": False,
+                 "checked_at": datetime.now(timezone.utc).isoformat()}
+            ).eq("id", item["id"]).execute()
+            gone += 1
+            continue
+        db.table("curated_list_items").update({
+            "price": fresh["price"], "list_price": fresh["list_price"],
+            "image_url": fresh["image_url"], "title": fresh["title"],
+            "variant_id": fresh["variant_id"], "in_stock": True,
+            "checked_at": datetime.now(timezone.utc).isoformat(),
+        }).eq("id", item["id"]).execute()
+        changed += 1
+    return {"status": "refreshed", "checked": len(items), "ok": changed, "unavailable": gone}
+
 
 def _try_record_override(override_data: dict):
     """Record admin override to improve future LLM decisions."""
