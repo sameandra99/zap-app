@@ -18,6 +18,8 @@ from datetime import datetime, timezone, timedelta
 import base64
 import binascii
 import hashlib
+import hmac
+import urllib.parse
 import httpx
 import os
 import re
@@ -308,12 +310,118 @@ def _admin_auth_ok(request: Request) -> bool:
             and _secrets.compare_digest(pw, ADMIN_PASSWORD))
 
 
+# Cookie session, because the browser dialog is no longer reliable.
+# Chrome now suppresses the WWW-Authenticate prompt on these responses, so the
+# dashboard rendered a bare "Unauthorized" with no way to enter a password —
+# locked out with correct credentials. Basic auth still works for curl and any
+# script, but a browser gets a real form.
+#
+# Signed with ADMIN_PASSWORD as the HMAC key rather than a new secret: rotating
+# the password therefore invalidates every existing session, which is the
+# behaviour you want anyway.
+_ADMIN_COOKIE = "zap_admin"
+_ADMIN_SESSION_DAYS = 30
+
+
+def _admin_sign(expires: int) -> str:
+    msg = f"{ADMIN_USER}|{expires}".encode()
+    sig = hmac.new(ADMIN_PASSWORD.encode(), msg, hashlib.sha256).hexdigest()
+    return f"{expires}.{sig}"
+
+
+def _admin_cookie_ok(request: Request) -> bool:
+    token = request.cookies.get(_ADMIN_COOKIE, "")
+    if not ADMIN_PASSWORD or "." not in token:
+        return False
+    raw_exp, _, sig = token.partition(".")
+    try:
+        expires = int(raw_exp)
+    except ValueError:
+        return False
+    if expires < int(time.time()):
+        return False
+    return _secrets.compare_digest(_admin_sign(expires), token)
+
+
+_ADMIN_LOGIN_HTML = """<!doctype html><html><head><meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1"><title>Zap Admin</title>
+<style>
+ body{margin:0;min-height:100vh;display:grid;place-items:center;background:#F7F5F2;color:#1C1917;
+  font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,sans-serif}
+ form{background:#fff;padding:28px;border-radius:12px;width:300px;
+  box-shadow:0 1px 3px rgba(0,0,0,.07),0 12px 32px rgba(0,0,0,.06)}
+ h1{font-size:19px;font-weight:800;letter-spacing:-.02em;margin:0 0 3px}
+ p{margin:0 0 18px;font-size:13px;color:#A8A29E}
+ input{width:100%;padding:10px 12px;margin-bottom:10px;border:1px solid #E7E5E4;
+  border-radius:8px;font:inherit;font-size:14px}
+ button{width:100%;padding:11px;border:0;border-radius:8px;background:#1C1917;color:#fff;
+  font:inherit;font-size:14px;font-weight:700;cursor:pointer}
+ .err{background:#FEE2E2;color:#B91C1C;font-size:13px;font-weight:600;padding:9px 11px;
+  border-radius:7px;margin-bottom:12px}
+</style></head><body>
+<form method="post" action="/admin/login">
+ <h1>Zap Admin</h1><p>__SUB__</p>__ERR__
+ <input name="username" placeholder="Username" autocomplete="username" autofocus>
+ <input name="password" type="password" placeholder="Password" autocomplete="current-password">
+ <button type="submit">Sign in</button>
+</form></body></html>"""
+
+
+def _login_page(error: str = "", status: int = 200) -> HTMLResponse:
+    html = (_ADMIN_LOGIN_HTML
+            .replace("__SUB__", "Internal dashboard")
+            .replace("__ERR__", f'<div class="err">{error}</div>' if error else ""))
+    return HTMLResponse(html, status_code=status)
+
+
+@app.get("/admin/login", response_class=HTMLResponse)
+def admin_login_page():
+    return _login_page()
+
+
+@app.post("/admin/login")
+async def admin_login(request: Request):
+    # Parsed by hand rather than via request.form(): Starlette routes all form
+    # parsing through python-multipart, which isn't a dependency here, and one
+    # urlencoded login form doesn't justify adding it to the image.
+    raw = (await request.body()).decode("utf-8", "ignore")
+    fields = urllib.parse.parse_qs(raw, keep_blank_values=True)
+    user = (fields.get("username") or [""])[0]
+    pw = (fields.get("password") or [""])[0]
+    if not ADMIN_PASSWORD:
+        return _login_page("Admin password is not configured on the server.", 503)
+    if not (_secrets.compare_digest(user, ADMIN_USER)
+            and _secrets.compare_digest(pw, ADMIN_PASSWORD)):
+        return _login_page("Wrong username or password.", 401)
+    expires = int(time.time()) + _ADMIN_SESSION_DAYS * 86400
+    response = RedirectResponse("/admin", status_code=303)
+    response.set_cookie(
+        _ADMIN_COOKIE, _admin_sign(expires), max_age=_ADMIN_SESSION_DAYS * 86400,
+        httponly=True, secure=True, samesite="lax", path="/",
+    )
+    return response
+
+
+@app.get("/admin/logout")
+def admin_logout():
+    response = RedirectResponse("/admin/login", status_code=303)
+    response.delete_cookie(_ADMIN_COOKIE, path="/")
+    return response
+
+
 @app.middleware("http")
 async def admin_basic_auth(request: Request, call_next):
     path = request.url.path
+    if path in ("/admin/login", "/admin/logout"):
+        return await call_next(request)
     if (path == "/admin" or path.startswith("/admin/") or path == "/notify") \
             and request.method != "OPTIONS":
-        if not _admin_auth_ok(request):
+        if not (_admin_auth_ok(request) or _admin_cookie_ok(request)):
+            # A browser navigating here gets the form; curl and scripts keep the
+            # 401 + WWW-Authenticate they already rely on.
+            wants_html = "text/html" in request.headers.get("accept", "")
+            if request.method == "GET" and wants_html:
+                return RedirectResponse("/admin/login", status_code=303)
             return Response(
                 content="Unauthorized",
                 status_code=401,
