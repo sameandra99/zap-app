@@ -501,6 +501,62 @@ def save(deals, sb, published):
     return len(rows)
 
 
+def push_live(sb, limit=3):
+    """Offer newly-visible deals to the push gate.
+
+    Deliberately not fired at save time: this ingest drips deals into the feed on
+    a schedule, so a deal saved now may not be visible for hours. Pushing then
+    would notify people about a card they cannot open. Instead each run offers
+    the deals that have become live since the last one.
+
+    The API owns every limit — daily cap, quiet hours, spacing, and idempotency
+    via pushed_at — so this only has to nominate candidates and report what came
+    back.
+    """
+    api = os.environ.get("LOOT_API_URL", "https://loot-api.fly.dev")
+    key = os.environ.get("INTERNAL_API_KEY", "")
+    now_iso = datetime.now(timezone.utc).isoformat()
+    try:
+        # Range scan rather than like("id", "d2c_%"): the wildcard reads as an
+        # injection attempt to the WAF in front of PostgREST, which answers with
+        # an HTML block page and a 500 from the client.
+        rows = (sb.table("deals")
+                .select("id,display_title,publish_at,pushed_at")
+                .gte("id", "d2c_").lt("id", "d2d")
+                .is_("pushed_at", "null")
+                .lte("publish_at", now_iso)
+                .order("publish_at", desc=True)
+                .limit(limit).execute().data) or []
+    except Exception as e:
+        print(f"  ⚠️  could not read push candidates ({type(e).__name__})")
+        return
+    if not rows:
+        print("  nothing newly live to push")
+        return
+    for row in rows:
+        payload = json.dumps({"deal_id": row["id"]}).encode()
+        req = urllib.request.Request(
+            f"{api}/internal/push-deal", data=payload,
+            headers={"Content-Type": "application/json",
+                     **({"X-Internal-Key": key} if key else {})})
+        status = None
+        for attempt in (1, 2):
+            try:
+                res = json.load(urllib.request.urlopen(req, timeout=20))
+                status = res.get("status", "?")
+                break
+            except urllib.error.HTTPError as e:
+                # Report the code: "HTTPError" alone said nothing when one of
+                # three calls failed and the API had no matching request logged,
+                # which is the signature of the edge answering, not the app.
+                status = f"HTTP {e.code}"
+            except Exception as e:
+                status = type(e).__name__
+            if attempt == 1:
+                time.sleep(1.5)
+        print(f"  push {row['id'][:34]:<34} {status}")
+
+
 def main():
     global MIN_DISCOUNT_PCT
     ap = argparse.ArgumentParser()
@@ -513,6 +569,11 @@ def main():
                     help="ONE-OFF initial fill: publish this many immediately so the "
                          "feed isn't empty. Defaults to 0 — a scheduled re-run must "
                          "never dump a fresh batch, it only tops up the queue.")
+    ap.add_argument("--no-push", action="store_true",
+                    help="skip the notification step (the API enforces the caps, "
+                         "so this is only for a quiet backfill run)")
+    ap.add_argument("--push-limit", type=int, default=3,
+                    help="how many newly-live deals to offer the push gate per run")
     args = ap.parse_args()
 
     MIN_DISCOUNT_PCT = args.min_discount
@@ -557,7 +618,11 @@ def main():
         live_ids = set(published or ())
         seed = min(args.seed, len(all_deals))
         all_deals = schedule(all_deals, args.per_hour, seed, live_ids)
-        queued = len(all_deals) - len(live_ids) - seed
+        # live_ids covers every D2C deal already in the feed, not just the ones
+        # this run fetched, so subtracting it from the run's own total goes
+        # negative once the feed outgrows a single pass.
+        fresh = sum(1 for d in all_deals if d["id"] not in live_ids)
+        queued = max(0, fresh - seed)
         span = max(1, (queued + args.per_hour - 1) // args.per_hour)
         print(f"{len(live_ids)} live, seeding {seed}, "
               f"{queued} queued at {args.per_hour}/hour over ~{span}h")
@@ -573,6 +638,9 @@ def main():
 
     n = save(all_deals, sb, published)
     print(f"upserted {n} deals")
+
+    if not args.no_push:
+        push_live(sb, limit=args.push_limit)
 
 
 if __name__ == "__main__":
