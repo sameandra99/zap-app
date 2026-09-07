@@ -539,11 +539,21 @@ def push_live(sb, limit=3):
             f"{api}/internal/push-deal", data=payload,
             headers={"Content-Type": "application/json",
                      **({"X-Internal-Key": key} if key else {})})
-        try:
-            res = json.load(urllib.request.urlopen(req, timeout=20))
-            status = res.get("status", "?")
-        except Exception as e:
-            status = f"{type(e).__name__}"
+        status = None
+        for attempt in (1, 2):
+            try:
+                res = json.load(urllib.request.urlopen(req, timeout=20))
+                status = res.get("status", "?")
+                break
+            except urllib.error.HTTPError as e:
+                # Report the code: "HTTPError" alone said nothing when one of
+                # three calls failed and the API had no matching request logged,
+                # which is the signature of the edge answering, not the app.
+                status = f"HTTP {e.code}"
+            except Exception as e:
+                status = type(e).__name__
+            if attempt == 1:
+                time.sleep(1.5)
         print(f"  push {row['id'][:34]:<34} {status}")
 
 
@@ -608,7 +618,11 @@ def main():
         live_ids = set(published or ())
         seed = min(args.seed, len(all_deals))
         all_deals = schedule(all_deals, args.per_hour, seed, live_ids)
-        queued = len(all_deals) - len(live_ids) - seed
+        # live_ids covers every D2C deal already in the feed, not just the ones
+        # this run fetched, so subtracting it from the run's own total goes
+        # negative once the feed outgrows a single pass.
+        fresh = sum(1 for d in all_deals if d["id"] not in live_ids)
+        queued = max(0, fresh - seed)
         span = max(1, (queued + args.per_hour - 1) // args.per_hour)
         print(f"{len(live_ids)} live, seeding {seed}, "
               f"{queued} queued at {args.per_hour}/hour over ~{span}h")
